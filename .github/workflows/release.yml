@@ -339,7 +339,6 @@ jobs:
     steps:
       - name: Report self-hosted fallback
         if: ${{ inputs.profile == 'unity' }}
-        shell: bash
         run: echo "::notice::Unity Build Automation not configured; using self-hosted build"
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
