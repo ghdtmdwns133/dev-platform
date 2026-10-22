@@ -185,9 +185,16 @@ jobs:
           set -euo pipefail
           gh label create automerge --color 0E8A16 \
             --description "Auto-merge when required checks pass" --force
-          prs=$(gh pr list --label "autorelease: pending" --state open \
-            --json number,headRefName,headRefOid \
-            --jq '.[] | "\(.number)\t\(.headRefName)\t\(.headRefOid)"')
+          prs=""
+          for _ in $(seq 1 12); do
+            prs=$(gh pr list --label "autorelease: pending" --state open \
+              --json number,headRefName,headRefOid \
+              --jq '.[] | "\(.number)\t\(.headRefName)\t\(.headRefOid)"')
+            if [ -n "$prs" ]; then
+              break
+            fi
+            sleep 5
+          done
           if [ -z "$prs" ]; then
             echo "::notice::release-please has no open release pull request"
             exit 0
@@ -220,9 +227,16 @@ jobs:
         run: |
           # shellcheck disable=SC2016 # $sha is a jq --arg, not a shell variable
           set -euo pipefail
-          pr=$(gh pr list --label "autorelease: pending" --state open --limit 1 \
-            --json number,headRefName,headRefOid \
-            --jq '(.[0] // empty) | "\(.number)\t\(.headRefName)\t\(.headRefOid)"')
+          pr=""
+          for _ in $(seq 1 12); do
+            pr=$(gh pr list --label "autorelease: pending" --state open --limit 1 \
+              --json number,headRefName,headRefOid \
+              --jq '(.[0] // empty) | "\(.number)\t\(.headRefName)\t\(.headRefOid)"')
+            if [ -n "$pr" ]; then
+              break
+            fi
+            sleep 5
+          done
           if [ -z "$pr" ]; then
             echo "::notice::no open release pull request to merge"
             exit 0
@@ -319,6 +333,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
           clean: ${{ !contains(inputs.runs-on, 'self-hosted') }}
           persist-credentials: false
       - name: Check out dev-platform
@@ -391,6 +406,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
           persist-credentials: false
       - name: Build with Unity Build Automation
         uses: ghdtmdwns133/dev-platform/actions/unity-cloud-build@v1

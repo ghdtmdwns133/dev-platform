@@ -219,7 +219,9 @@ pull-request CI run in `action_required`, so the release job approves that run
 (`actions: write`) and then waits up to 15 minutes for auto-merge to merge the
 PR. After the merge it checks out the updated default branch and runs
 release-please a second time, so `release_created` becomes true in the same
-workflow run and the build/publish jobs attach the assets.
+workflow run and the build/publish jobs attach the assets. The build jobs check
+out the release tag, not the triggering commit, so the artifact version always
+matches the tag.
 
 The `workflow_run` path remains for CI runs started by a trusted actor (for
 example a manual re-run): it merges the Release PR with `gh pr merge --squash
