@@ -1,5 +1,6 @@
 {
   "release-type": "python",
+  "always-update": true,
   "packages": {
     ".": {
       "release-type": "python",
