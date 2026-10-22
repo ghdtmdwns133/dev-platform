@@ -184,8 +184,6 @@ jobs:
     uses: ./.github/workflows/security.yml
     with:
       upload-sarif: true
-    secrets:
-      copilot_assign_token: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
 
   workflow-lint:
     name: workflow-lint
@@ -219,8 +217,6 @@ jobs:
     permissions:
       contents: read
       issues: write
-    env:
-      COPILOT_ASSIGN_TOKEN: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

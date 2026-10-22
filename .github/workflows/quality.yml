@@ -31,9 +31,6 @@ on:
       codecov_token:
         description: Codecov upload token.
         required: false
-      copilot_assign_token:
-        description: Fine-grained PAT used to assign failure issues to Copilot.
-        required: false
 
 permissions:
   contents: read
@@ -100,8 +97,6 @@ jobs:
     permissions:
       contents: read
       issues: write
-    env:
-      COPILOT_ASSIGN_TOKEN: ${{ secrets.copilot_assign_token }}
     steps:
       - name: Open or update failure issue
         uses: ghdtmdwns133/dev-platform/actions/notify@v1
@@ -109,3 +104,4 @@ jobs:
           status: verify job failed
           title: "CI failure: ${{ github.workflow }}"
           label: ci-alert
+          profile: ${{ inputs.profile }}

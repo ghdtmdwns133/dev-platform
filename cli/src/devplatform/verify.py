@@ -251,7 +251,7 @@ def run_verify(
         "minimum": min_coverage,
         "report": None,
     }
-    tests = {"passed": 0, "failed": 0, "skipped": 0}
+    tests: dict[str, Any] = {"passed": 0, "failed": 0, "skipped": 0, "flaky": []}
     aborted = False
     editor: Path | None = None
 
@@ -327,18 +327,20 @@ def run_verify(
                 )
                 for key in ("passed", "failed", "skipped"):
                     tests[key] += int(result.data.get(key, 0))
+                tests["flaky"].extend(result.data.get("flaky", []))
             elif step.kind == "unity-coverage":
-                results = unity.collect_coverage(reports_dir, config)
-                aggregate = unity.aggregate_coverage(results)
-                platforms = {name: row.get("line") for name, row in results.items()}
+                measured = unity.collect_coverage(reports_dir, config)
                 coverage_record = {
-                    "line": aggregate["line"],
+                    "line": measured.get("line"),
                     "minimum": min_coverage,
-                    "report": aggregate.get("report"),
-                    "platforms": platforms,
+                    "report": (
+                        report.display_path(measured["report"], root)
+                        if measured.get("report")
+                        else None
+                    ),
                 }
                 _write_log(log, [json.dumps(coverage_record, indent=2)])
-                if aggregate["line"] is None:
+                if measured.get("line") is None:
                     outcome = _record(
                         step,
                         procs.STATUS_PASSED,
@@ -348,7 +350,7 @@ def run_verify(
                         root,
                         "coverage report not produced",
                     )
-                elif aggregate["line"] < min_coverage:
+                elif measured["line"] < min_coverage:
                     outcome = _record(
                         step,
                         procs.STATUS_FAILED,
@@ -356,7 +358,7 @@ def run_verify(
                         time.monotonic() - step_started,
                         log,
                         root,
-                        _coverage_detail(profile, aggregate["line"], min_coverage),
+                        _coverage_detail(profile, measured["line"], min_coverage),
                     )
                 else:
                     outcome = _record(
@@ -366,7 +368,7 @@ def run_verify(
                         time.monotonic() - step_started,
                         log,
                         root,
-                        _coverage_detail(profile, aggregate["line"], min_coverage),
+                        _coverage_detail(profile, measured["line"], min_coverage),
                     )
             elif step.kind == "coverage":
                 producer = COVERAGE_PRODUCERS.get(step.coverage_kind or "")
@@ -480,6 +482,7 @@ def run_verify(
 
     if profile in {"python", "typescript", "dotnet"}:
         tests = _run_test_counts(profile, root, reports_dir)
+    tests.setdefault("flaky", [])
 
     exit_code = aggregate_exit(outcomes)
     status = (

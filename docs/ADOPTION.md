@@ -82,9 +82,13 @@ Apply these with the API (owner is `ghdtmdwns133`, repository is the consumer):
 gh api -X PATCH repos/ghdtmdwns133/<repo> -F allow_auto_merge=true -F delete_branch_on_merge=true
 gh api -X PUT repos/ghdtmdwns133/<repo>/actions/permissions/artifact-and-log-retention -F days=14
 gh api -X PUT repos/ghdtmdwns133/<repo>/actions/permissions/workflow \
-  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false
+  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
 gh api -X PUT repos/ghdtmdwns133/<repo>/vulnerability-alerts
 ```
+
+`can_approve_pull_request_reviews=true` is required so release-please can open
+its Release PR with `GITHUB_TOKEN`. The default workflow permission stays
+read-only.
 
 `pull_request_target` is never used.
 
@@ -166,11 +170,9 @@ enables auto-merge.
 
 Dependabot nuance: runs triggered by Dependabot pull requests receive a
 read-only `GITHUB_TOKEN` and no secrets unless the workflow declares
-permissions, and GitHub may still downgrade the token for Dependabot events. If
-`AUTOMERGE_TOKEN` (fine-grained PAT with contents and pull-requests write) is
-configured, it is used instead. Without it, `gh pr merge --auto` can fail; the
-step reports a warning and leaves the pull request for manual merge. Copilot
-pull requests are never auto-merged.
+permissions, and GitHub may still downgrade the token for Dependabot events.
+When `gh pr merge --auto` fails, the step reports a warning and leaves the pull
+request for manual merge.
 
 ## Release automation
 
@@ -179,33 +181,41 @@ Each template contains `release-please-config.json` and
 `.github/workflows/release.yml` runs on pushes to `main` and calls the shared
 release workflow.
 
-The shared workflow runs release-please, labels its Release PR `automerge`, and
-when `release_created` is true, builds and uploads the assets in the same
-workflow. This is necessary because tags created with `GITHUB_TOKEN` do not
-trigger other workflows.
+The shared workflow runs release-please, labels its Release PR `automerge`,
+enables auto-merge on it, and when `release_created` is true, builds and uploads
+the assets in the same workflow. Tags created with `GITHUB_TOKEN` do not trigger
+other workflows, so the assets are built in the same run.
 
 `GITHUB_TOKEN`-authored pull requests also do not trigger `pull_request`
-workflows, so their required checks never report. Configure a fine-grained PAT
-as `RELEASE_TOKEN` and pass it to the shared workflow to let release PRs run
-CI; otherwise merge the release PR with the admin bypass. The workflow accepts
-`release_token` and falls back to `github.token`.
+workflows, so their required checks never appear by themselves. While the
+Release PR is open, the workflow dispatches the caller CI on the Release PR
+branch:
+
+```bash
+gh workflow run ci.yml --ref <release-pr-branch>
+```
+
+`workflow_dispatch` is allowed with `GITHUB_TOKEN`, and the resulting check runs
+attach to the head SHA, satisfying the ruleset. The workflow file name is the
+`ci-workflow` input (default `ci.yml`); the caller workflow must declare
+`workflow_dispatch`. The release job needs `actions: write` and the template
+caller grants it. No personal access token is required.
+
+The repository setting `can_approve_pull_request_reviews=true` is required for
+release-please to create the Release PR with `GITHUB_TOKEN`; the integration
+owner sets it.
 
 The build job runs on `runs-on`, a JSON string of runner labels
 (default `'"ubuntu-latest"'`). Unity repositories can pass
 `'["self-hosted","windows","unity"]'` and use a PowerShell build command.
 
-## Copilot gates and failure issues
-
-The templates include `.github/workflows/copilot-setup-steps.yml`. Its job must
-be named `copilot-setup-steps`; it checks out dev-platform, installs the
-language toolchain and runs `devctl verify`, so the Copilot cloud agent uses
-the same gate as humans. Copilot pull requests wait for workflow approval;
-keep the repository default rather than disabling the approval requirement.
+## Failure issues
 
 On failure, the `notify` action creates an issue labeled `ci-alert` or comments
 on the open issue with the same title, and records the workflow, job, commit,
-run URL and failed step. When the `COPILOT_ASSIGN_TOKEN` secret is present the
-issue is assigned to Copilot; otherwise a notice is emitted.
+run URL, failed step and the exact local repro command
+(`devctl verify --profile <p>`). Quality, nightly and Unity workflows pass the
+profile they ran; the security workflow does not run a `devctl verify` profile.
 
 ## Secrets and services
 

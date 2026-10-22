@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from __PACKAGE__.pipeline import Stage, StageGraphError, critical_path_length, topological_order
+from __PACKAGE__.pipeline import (
+    Stage,
+    StageGraphError,
+    critical_path_length,
+    topological_order,
+)
 
 
 def test_critical_path_uses_longest_chain() -> None:

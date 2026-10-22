@@ -37,8 +37,6 @@
     "upload-artifact": "actions/upload-artifact@v4",
     "download-artifact": "actions/download-artifact@v4",
     "codecov-action": "codecov/codecov-action@v7",
-    "trivy-action": "aquasecurity/trivy-action@v0.33.1",
-    "gitleaks-action": "gitleaks/gitleaks-action@v2",
     "dependency-review-action": "actions/dependency-review-action@v4.9.0",
     "release-please-action": "googleapis/release-please-action@v4",
     "unity-test-runner": "game-ci/unity-test-runner@v4",

@@ -56,8 +56,8 @@ required feature absent. The full reference is
   both checks red at once.
 - Security scanning covers trivy (vulnerabilities, secrets, misconfiguration),
   gitleaks, zizmor and actionlint, and publishes SARIF plus a CycloneDX SBOM.
-- Failures open or update an issue labeled `ci-alert`. With
-  `COPILOT_ASSIGN_TOKEN` the issue is assigned to Copilot.
+- Failures open or update an issue labeled `ci-alert` containing the exact
+  local repro command.
 - Dependabot patch/minor PRs and PRs labeled `automerge` (from the repository
   owner or `github-actions[bot]`) are auto-merged once required checks pass.
 - release-please opens a Release PR from conventional commits; merging it

@@ -18,7 +18,8 @@ def test_defaults_without_file(tmp_path: Path) -> None:
     assert config.coverage_minimum == 0
     assert config.coverage_enabled is True
     assert config.unity["version"] == "6000.5.1f1"
-    assert config.unity["playmodeNographics"] is False
+    assert config.unity["playmodeMode"] == "gui"
+    assert config.unity["retryFailed"] == 1
     assert config.unity["coverageAssemblyFilters"] == ["-*Tests*"]
     assert reports_directory(tmp_path, config) == tmp_path / "artifacts/reports"
 
@@ -127,7 +128,24 @@ def test_coverage_bounds(tmp_path: Path) -> None:
         load_config(tmp_path)
 
 
-def test_playmode_nographics_flag(tmp_path: Path) -> None:
-    _write(tmp_path, {"profile": "unity", "unity": {"playmodeNographics": True}})
+def test_playmode_mode_and_retry_config(tmp_path: Path) -> None:
+    _write(tmp_path, {"profile": "unity"})
     config = load_config(tmp_path)
-    assert config.unity["playmodeNographics"] is True
+    assert config.unity["playmodeMode"] == "gui"
+    assert config.unity["retryFailed"] == 1
+
+    _write(
+        tmp_path,
+        {"profile": "unity", "unity": {"playmodeMode": "batch", "retryFailed": 2}},
+    )
+    config = load_config(tmp_path)
+    assert config.unity["playmodeMode"] == "batch"
+    assert config.unity["retryFailed"] == 2
+
+    _write(tmp_path, {"profile": "unity", "unity": {"playmodeMode": "headless"}})
+    with pytest.raises(DevctlError):
+        load_config(tmp_path)
+
+    _write(tmp_path, {"profile": "unity", "unity": {"retryFailed": -1}})
+    with pytest.raises(DevctlError):
+        load_config(tmp_path)

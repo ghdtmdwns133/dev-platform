@@ -15,6 +15,7 @@ jobs:
   platform-release:
     name: platform-release
     permissions:
+      actions: write
       contents: write
       pull-requests: write
     uses: __OWNER__/dev-platform/.github/workflows/release.yml@__PLATFORM_REF__
@@ -25,5 +26,3 @@ jobs:
       artifact-path: dist.zip
       artifact-name: web-dist
       platform-ref: __PLATFORM_REF__
-    secrets:
-      release_token: ${{ secrets.RELEASE_TOKEN }}

@@ -33,7 +33,6 @@ jobs:
       platform-ref: __PLATFORM_REF__
     secrets:
       codecov_token: ${{ secrets.CODECOV_TOKEN }}
-      copilot_assign_token: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
 
   platform-security:
     name: platform-security
@@ -46,5 +45,3 @@ jobs:
     with:
       upload-sarif: __UPLOAD_SARIF__
       platform-ref: __PLATFORM_REF__
-    secrets:
-      copilot_assign_token: ${{ secrets.COPILOT_ASSIGN_TOKEN }}

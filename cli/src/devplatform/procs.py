@@ -59,8 +59,9 @@ def emit_error(message: str, title: str | None = None) -> None:
     print(f"{prefix}{_escape_annotation(message)}")
 
 
-def emit_warning(message: str) -> None:
-    print(f"::warning::{_escape_annotation(message)}")
+def emit_warning(message: str, title: str | None = None) -> None:
+    prefix = f"::warning title={_escape_annotation(title)}::" if title else "::warning::"
+    print(f"{prefix}{_escape_annotation(message)}")
 
 
 def emit_notice(message: str) -> None:
@@ -100,6 +101,7 @@ def run(
             effective,
             cwd=str(cwd),
             env=child_env,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             encoding="utf-8",

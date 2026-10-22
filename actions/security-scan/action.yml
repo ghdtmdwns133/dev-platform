@@ -19,24 +19,56 @@ runs:
     - name: Prepare report directory
       shell: bash
       run: mkdir -p artifacts/security
+    - name: Install trivy
+      shell: bash
+      env:
+        TRIVY_VERSION: "0.74.0"
+      run: |
+        set -euo pipefail
+        tmp="$(mktemp -d)"
+        base="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+        archive="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+        curl -sSL -o "$tmp/$archive" "$base/$archive"
+        curl -sSL -o "$tmp/checksums.txt" "$base/trivy_${TRIVY_VERSION}_checksums.txt"
+        (cd "$tmp" && grep -F "  ${archive}" checksums.txt | sha256sum -c -)
+        sudo tar -xzf "$tmp/$archive" -C /usr/local/bin trivy
+        trivy --version
     - name: Trivy filesystem scan
-      uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
-      with:
-        scan-type: fs
-        scan-ref: .
-        scanners: vuln,secret,misconfig
-        ignore-unfixed: true
-        severity: ${{ inputs.severity }}
-        format: sarif
-        output: artifacts/security/trivy.sarif
-        exit-code: "1"
+      shell: bash
+      env:
+        SEVERITY: ${{ inputs.severity }}
+      run: |
+        set -euo pipefail
+        trivy fs \
+          --scanners vuln,secret,misconfig \
+          --severity "$SEVERITY" \
+          --ignore-unfixed \
+          --format sarif \
+          --output artifacts/security/trivy.sarif \
+          --exit-code 1 \
+          --skip-dirs .dev-platform \
+          --skip-dirs node_modules \
+          --skip-dirs artifacts \
+          --skip-dirs Library \
+          --skip-dirs Temp \
+          --skip-dirs Logs \
+          .
     - name: Trivy configuration scan
-      uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
-      with:
-        scan-type: config
-        scan-ref: .
-        severity: ${{ inputs.severity }}
-        exit-code: "1"
+      shell: bash
+      env:
+        SEVERITY: ${{ inputs.severity }}
+      run: |
+        set -euo pipefail
+        trivy config \
+          --severity "$SEVERITY" \
+          --exit-code 1 \
+          --skip-dirs .dev-platform \
+          --skip-dirs node_modules \
+          --skip-dirs artifacts \
+          --skip-dirs Library \
+          --skip-dirs Temp \
+          --skip-dirs Logs \
+          .
     - name: Install gitleaks
       shell: bash
       env:
@@ -47,7 +79,7 @@ runs:
         base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
         curl -sSL -o "$tmp/gitleaks.tar.gz" "${base}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
         curl -sSL -o "$tmp/checksums.txt" "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
-        (cd "$tmp" && grep " gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz$" checksums.txt | sha256sum -c -)
+        (cd "$tmp" && grep -F "  gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" checksums.txt | sha256sum -c -)
         sudo tar -xzf "$tmp/gitleaks.tar.gz" -C /usr/local/bin gitleaks
         gitleaks version
     - name: Scan for leaked secrets
@@ -79,14 +111,21 @@ runs:
       shell: bash
       run: docker run --rm -v "$GITHUB_WORKSPACE:/repo" -w /repo rhysd/actionlint:1.7.7
     - name: Generate CycloneDX SBOM
-      uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
-      with:
-        scan-type: fs
-        scan-ref: .
-        scanners: vuln
-        format: cyclonedx
-        output: artifacts/security/sbom.cdx.json
-        exit-code: "0"
+      shell: bash
+      run: |
+        set -euo pipefail
+        trivy fs \
+          --scanners vuln \
+          --format cyclonedx \
+          --output artifacts/security/sbom.cdx.json \
+          --exit-code 0 \
+          --skip-dirs .dev-platform \
+          --skip-dirs node_modules \
+          --skip-dirs artifacts \
+          --skip-dirs Library \
+          --skip-dirs Temp \
+          --skip-dirs Logs \
+          .
     - name: Upload SARIF results
       if: ${{ inputs.upload-sarif == 'true' }}
       uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3

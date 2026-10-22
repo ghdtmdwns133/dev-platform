@@ -2,24 +2,33 @@
 
 Design notes
 ------------
-* EditMode always runs with ``-nographics``.  PlayMode runs with graphics by
-  default (the first supported combination) and only adds ``-nographics`` when
-  ``unity.playmodeNographics`` is true, so a repository whose play mode tests need
-  a graphics device can opt out.
+* EditMode always runs with ``-batchmode -nographics``.  PlayMode defaults to
+  ``unity.playmodeMode = "gui"``: no ``-batchmode`` and no ``-nographics`` (Unity
+  opens its window, runs the tests and exits on its own).  ``"batch"`` adds
+  ``-batchmode`` without ``-nographics``.  GUI mode is required for project-delta
+  because InputSystem drops input while ``!Application.isFocused`` and the test
+  framework rejects ``WaitForEndOfFrame`` in batchmode.
 * Test runs never pass ``-quit``: Unity documents that ``-quit`` is unsupported
-  while ``-runTests`` is active; the editor exits on its own when the run ends.
+  while ``-runTests`` is active.
+* ``unity.retryFailed`` (default 1) reruns only the failed test full names once
+  via ``-testFilter`` with escaped names.  Failures that pass on retry are
+  reported as flaky (``tests.flaky`` plus a ``::warning title=flaky test::``).
+  Retry runs never enable code coverage.
+* Both test platforms share ONE ``-coverageResultsPath <reports>/unity/coverage``;
+  the PlayMode report is generated on each run and merges all results, so its
+  ``Report/Summary.xml`` is the combined number.
 * ``unity.coverageAssemblyFilters`` uses Unity's ``assemblyFilters`` syntax
-  (``+Include`` / ``-Exclude``).  The default ``["-*Tests*"]`` keeps everything
-  except assemblies whose name contains ``Tests`` in coverage; repositories that
-  want a narrow runtime assembly set override it, e.g.
+  (``+Include`` / ``-Exclude``).  The default ``["-*Tests*"]`` excludes test
+  assemblies; repositories can narrow it, e.g.
   ``["+ProjectDelta.Runtime", "-ProjectDelta.Tests.*"]``.
-* ``unity.playmodeNographics`` (default false) and ``unity.buildOutput``
-  (default ``artifacts/unity-build/ProjectDelta.exe``) are the only extra config
-  keys beyond the platform plan; both are validated by :mod:`devplatform.config`.
+* Build success requires the configured exe plus more than 1 MiB in the whole
+  output directory (Unity 6 keeps the engine in ``UnityPlayer.dll``); the detail
+  reports total bytes, exe bytes and the exe SHA-256.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -187,13 +196,29 @@ def coverage_options(config: Config) -> str:
 
 
 def test_argv(
-    root: Path, reports_dir: Path, config: Config, platform: str, editor: Path
+    root: Path,
+    reports_dir: Path,
+    config: Config,
+    platform: str,
+    editor: Path,
+    *,
+    coverage: bool | None = None,
+    test_filter: str | None = None,
+    result_stem: str | None = None,
 ) -> list[str]:
-    """Build the exact headless test argv (never includes ``-quit``)."""
+    """Build the test argv (never includes ``-quit``).
+
+    PlayMode uses ``unity.playmodeMode``: ``"gui"`` (default) adds neither
+    ``-batchmode`` nor ``-nographics``; ``"batch"`` adds ``-batchmode`` only.
+    Retry runs pass ``coverage=False``.
+    """
     unity_dir = Path(reports_dir) / "unity"
-    argv = [str(editor), "-batchmode"]
-    if platform == "EditMode" or config.unity["playmodeNographics"]:
-        argv.append("-nographics")
+    stem = result_stem or platform.lower()
+    argv = [str(editor)]
+    if platform == "EditMode":
+        argv.extend(["-batchmode", "-nographics"])
+    elif config.unity["playmodeMode"] == "batch":
+        argv.append("-batchmode")
     argv.extend(
         [
             "-runTests",
@@ -202,22 +227,77 @@ def test_argv(
             "-testPlatform",
             platform,
             "-testResults",
-            str(unity_dir / f"{platform.lower()}.xml"),
+            str(unity_dir / f"{stem}.xml"),
             "-logFile",
-            str(unity_dir / f"{platform.lower()}.log"),
+            str(unity_dir / f"{stem}.log"),
         ]
     )
-    if config.coverage_enabled:
+    if test_filter is not None:
+        argv.extend(["-testFilter", test_filter])
+    if coverage is None:
+        coverage = config.coverage_enabled
+    if coverage:
         argv.extend(
             [
                 "-enableCodeCoverage",
                 "-coverageResultsPath",
-                str(unity_dir / f"coverage-{platform.lower()}"),
+                str(unity_dir / "coverage"),
                 "-coverageOptions",
                 coverage_options(config),
             ]
         )
     return argv
+
+
+def _test_cases(path: Path) -> list[dict[str, str]]:
+    try:
+        root = ET.parse(path).getroot()
+    except (OSError, ET.ParseError):
+        return []
+    run = root if root.tag == "test-run" else root.find(".//test-run")
+    if run is None:
+        return []
+    cases: list[dict[str, str]] = []
+    for case in run.iter("test-case"):
+        cases.append(
+            {
+                "name": case.get("name") or "",
+                "fullname": case.get("fullname") or case.get("name") or "",
+                "result": case.get("result") or "",
+            }
+        )
+    return cases
+
+
+def failed_test_names(path: Path) -> list[str]:
+    """Return the full names of failed/errored test cases in a NUnit3 file."""
+    names: list[str] = []
+    for case in _test_cases(path):
+        if case["result"] in {"Failed", "Error"} and case["fullname"] not in names:
+            names.append(case["fullname"])
+    return names
+
+
+def passed_test_names(path: Path) -> set[str]:
+    """Return the full names of passed test cases in a NUnit3 file."""
+    return {case["fullname"] for case in _test_cases(path) if case["result"] == "Passed"}
+
+
+def retry_filter(names: list[str]) -> str:
+    """Build the ``-testFilter`` regex for the failed test full names."""
+    return "|".join(re.escape(name) for name in names)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _directory_size(directory: Path) -> int:
+    return sum(path.stat().st_size for path in directory.rglob("*") if path.is_file())
 
 
 def parse_nunit(path: Path) -> dict[str, Any]:
@@ -326,13 +406,92 @@ def run_tests(
     except DevctlError as exc:
         return UnityStep(name, procs.STATUS_ERROR, EXIT_EXECUTION, result.log, exc.message)
 
-    failed = counts["failed"] > 0 or counts["result"] != "Passed"
-    status = procs.STATUS_FAILED if failed or result.exit != 0 else procs.STATUS_PASSED
+    failed_names = failed_test_names(result_file)
+    first_run_failed = counts["failed"] > 0 or counts["result"] != "Passed" or bool(failed_names)
+    remaining = list(failed_names)
+    flaky: list[str] = []
+    retry_limit = int(config.unity["retryFailed"])
+    retry_log = result.log
+
+    for attempt in range(retry_limit if first_run_failed else 0):
+        if not remaining:
+            break
+        suffix = "" if attempt == 0 else str(attempt + 1)
+        stem = f"{platform.lower()}-retry{suffix}"
+        retry_argv = test_argv(
+            Path(root),
+            Path(reports_dir),
+            config,
+            platform,
+            editor,
+            coverage=False,
+            test_filter=retry_filter(remaining),
+            result_stem=stem,
+        )
+        retry_result = runner(
+            f"{name}-retry{suffix}",
+            retry_argv,
+            Path(root),
+            Path(reports_dir) / profile / f"{name}-retry{suffix}.log",
+        )
+        retry_log = retry_result.log
+        retry_file = unity_dir / f"{stem}.xml"
+        if retry_result.status == procs.STATUS_ERROR:
+            return UnityStep(
+                name,
+                procs.STATUS_ERROR,
+                retry_result.exit,
+                retry_result.log,
+                f"retry run failed: {retry_result.detail}",
+            )
+        if not retry_file.is_file():
+            return UnityStep(
+                name,
+                procs.STATUS_ERROR,
+                EXIT_EXECUTION,
+                retry_result.log,
+                f"Unity retry result file missing: {retry_file}",
+            )
+        passed = passed_test_names(retry_file)
+        newly_passed = [item for item in remaining if item in passed]
+        if not newly_passed:
+            break
+        flaky.extend(newly_passed)
+        remaining = [item for item in remaining if item not in newly_passed]
+
+    total_failed = (
+        max(counts["failed"], 1) if first_run_failed and not failed_names else len(remaining)
+    )
+    if not first_run_failed and result.exit != 0:
+        status = procs.STATUS_FAILED
+    elif total_failed == 0:
+        status = procs.STATUS_PASSED
+    else:
+        status = procs.STATUS_FAILED
     exit_code = 0 if status == procs.STATUS_PASSED else 1
-    detail = f"{counts['passed']} passed, {counts['failed']} failed, {counts['skipped']} skipped"
-    if result.exit != 0 and not failed:
+
+    for item in flaky:
+        procs.emit_warning(item, title="flaky test")
+
+    passed = counts["passed"] + len(flaky)
+    detail = f"{passed} passed, {total_failed} failed, {counts['skipped']} skipped"
+    if flaky:
+        detail += f" (flaky: {len(flaky)})"
+    if status == procs.STATUS_PASSED and flaky:
+        detail = f"flaky: {len(flaky)}"
+    if status == procs.STATUS_FAILED and not first_run_failed and result.exit != 0:
         detail += f" (Unity exit {result.exit})"
-    return UnityStep(name, status, exit_code, result.log, detail, counts)
+        retry_log = result.log
+    data = {
+        "passed": passed,
+        "failed": total_failed,
+        "skipped": counts["skipped"],
+        "total": counts.get("total", 0),
+        "result": counts.get("result", ""),
+        "flaky": flaky,
+    }
+    log = retry_log if flaky else result.log
+    return UnityStep(name, status, exit_code, log, detail, data)
 
 
 def build_project(
@@ -376,16 +535,19 @@ def build_project(
             result.log,
             f"build output missing: {output}",
         )
-    size = output.stat().st_size
-    if size <= MIN_BUILD_BYTES:
+    total_size = _directory_size(output.parent)
+    if total_size <= MIN_BUILD_BYTES:
         return UnityStep(
             "unity-build",
             procs.STATUS_ERROR,
             EXIT_EXECUTION,
             result.log,
-            f"build output too small: {size} bytes",
+            f"build output directory too small: {total_size} bytes",
         )
-    return UnityStep("unity-build", procs.STATUS_PASSED, 0, result.log, f"{size} bytes")
+    exe_size = output.stat().st_size
+    digest = _sha256(output)
+    detail = f"{total_size} bytes total, exe {exe_size} bytes, sha256 {digest}"
+    return UnityStep("unity-build", procs.STATUS_PASSED, 0, result.log, detail)
 
 
 def run_odin(
@@ -457,42 +619,20 @@ def run_odin(
     )
 
 
-def collect_coverage(
-    reports_dir: Path, config: Config, platforms: list[str] | None = None
-) -> dict[str, dict[str, Any]]:
-    """Parse ``coverage-<platform>/Report/Summary.xml`` for each test platform."""
-    reports_dir = Path(reports_dir)
-    wanted = platforms if platforms is not None else list(config.unity["testPlatforms"])
-    results: dict[str, dict[str, Any]] = {}
-    for platform in wanted:
-        path = reports_dir / "unity" / f"coverage-{platform.lower()}" / "Report" / "Summary.xml"
-        if not path.is_file():
-            procs.emit_warning("code coverage report not produced")
-            results[platform] = {"line": None, "report": None}
-            continue
-        parsed = parse_summary_xml(path)
-        parsed["report"] = path
-        results[platform] = parsed
-    return results
+def collect_coverage(reports_dir: Path, config: Config | None = None) -> dict[str, Any]:
+    """Parse the single combined ``<reports>/unity/coverage/Report/Summary.xml``.
 
-
-def aggregate_coverage(results: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """Combine per-platform coverage into one summary record."""
-    rows = [row for row in results.values() if row.get("line") is not None]
-    if not rows:
-        return {"line": None, "minimum": None, "report": None}
-    covered = sum(row["covered"] for row in rows if row.get("covered") is not None)
-    coverable = sum(row["coverable"] for row in rows if row.get("coverable") is not None)
-    if coverable:
-        line = round(covered / coverable * 100.0, 2)
-    else:
-        line = round(sum(row["line"] for row in rows) / len(rows), 2)
-    report = rows[0].get("report")
-    return {
-        "line": line,
-        "report": Path(report).as_posix() if report else None,
-        "platforms": {name: row.get("line") for name, row in results.items()},
-    }
+    Both EditMode and PlayMode write into the same ``-coverageResultsPath``; the
+    report generated by the PlayMode run merges every result in that directory,
+    so one Summary.xml is the combined number.
+    """
+    path = Path(reports_dir) / "unity" / "coverage" / "Report" / "Summary.xml"
+    if not path.is_file():
+        procs.emit_warning("code coverage report not produced")
+        return {"line": None, "report": None}
+    parsed = parse_summary_xml(path)
+    parsed["report"] = path
+    return parsed
 
 
 def nunit_to_junit(source: Path, out: Path) -> dict[str, int]:
@@ -609,10 +749,10 @@ def _git(root: Path, *args: str) -> tuple[int, str, str]:
 
 
 def opencover_reports(reports_dir: Path) -> list[Path]:
-    unity_dir = Path(reports_dir) / "unity"
-    if not unity_dir.is_dir():
+    coverage_dir = Path(reports_dir) / "unity" / "coverage"
+    if not coverage_dir.is_dir():
         return []
-    return sorted(unity_dir.glob("coverage-*/**/TestCoverageResults_*.xml"))
+    return sorted(coverage_dir.rglob("TestCoverageResults_*.xml"))
 
 
 def github_slug(root: Path) -> str:
@@ -644,12 +784,11 @@ def coverage_upload(
     profile: str = "unity",
     token: str | None = None,
 ) -> UnityStep:
-    """Upload Unity OpenCover reports to Codecov for each test platform flag."""
+    """Upload all Unity OpenCover reports to Codecov with the single ``unity`` flag."""
     from .versions import load_versions
 
     root = Path(root)
     reports_dir = Path(reports_dir)
-    unity_dir = reports_dir / "unity"
     reports = opencover_reports(reports_dir)
     if not reports:
         raise DevctlError(EXIT_PRECONDITION, "no Unity OpenCover report found")
@@ -679,82 +818,41 @@ def coverage_upload(
     if not version:
         raise DevctlError(EXIT_PRECONDITION, "tools.codecovCli missing from versions.json")
 
-    grouped: dict[str, list[Path]] = {}
-    for report in reports:
-        grouped.setdefault(_platform_from_report(report, unity_dir), []).append(report)
-
-    logs: list[Path] = []
-    statuses: list[UnityStep] = []
-    for platform, files in sorted(grouped.items()):
-        flag = f"unity-{platform}"
-        argv = [
-            "uvx",
-            "--python",
-            "3.12",
-            "--from",
-            f"codecov-cli=={version}",
-            "codecovcli",
-            "upload-process",
-            "--git-service",
-            "github",
-            "--slug",
-            slug,
-            "--sha",
-            sha,
-            "--branch",
-            branch,
-            "--flag",
-            flag,
-            "--fail-on-error",
-        ]
-        for file in files:
-            argv.extend(["--file", str(file)])
-        log = reports_dir / profile / f"unity-coverage-upload-{flag}.log"
-        result = runner(
-            f"unity-coverage-upload-{flag}",
-            argv,
-            root,
-            log,
-            env={"CODECOV_TOKEN": token},
-        )
-        logs.append(log)
-        statuses.append(
-            UnityStep(
-                f"unity-coverage-upload-{flag}",
-                result.status,
-                0
-                if result.status == procs.STATUS_PASSED
-                else (1 if result.exit == 0 else result.exit),
-                log,
-                f"flag {flag}: {len(files)} file(s)",
-            )
-        )
-    combined_log = reports_dir / profile / "unity-coverage-upload.log"
-    combined_log.parent.mkdir(parents=True, exist_ok=True)
-    combined_log.write_text(
-        "".join(path.read_text(encoding="utf-8") for path in logs if path.is_file()),
-        encoding="utf-8",
-    )
-    if any(step.status == procs.STATUS_ERROR for step in statuses):
-        return UnityStep(
-            "unity-coverage-upload",
-            procs.STATUS_ERROR,
-            EXIT_EXECUTION,
-            combined_log,
-            "; ".join(step.detail for step in statuses),
-        )
-    if any(step.status == procs.STATUS_FAILED for step in statuses):
-        return UnityStep(
-            "unity-coverage-upload",
-            procs.STATUS_FAILED,
-            1,
-            combined_log,
-            "; ".join(step.detail for step in statuses),
-        )
-    return UnityStep(
+    argv = [
+        "uvx",
+        "--python",
+        "3.12",
+        "--from",
+        f"codecov-cli=={version}",
+        "codecovcli",
+        "upload-process",
+        "--git-service",
+        "github",
+        "--slug",
+        slug,
+        "--sha",
+        sha,
+        "--branch",
+        branch,
+        "--flag",
+        "unity",
+        "--fail-on-error",
+    ]
+    for file in reports:
+        argv.extend(["--file", str(file)])
+    log = reports_dir / profile / "unity-coverage-upload.log"
+    result = runner(
         "unity-coverage-upload",
-        procs.STATUS_PASSED,
-        0,
-        combined_log,
-        "; ".join(step.detail for step in statuses),
+        argv,
+        root,
+        log,
+        env={"CODECOV_TOKEN": token},
     )
+    detail = f"flag unity: {len(reports)} file(s)"
+    if result.status == procs.STATUS_ERROR:
+        return UnityStep(
+            "unity-coverage-upload", procs.STATUS_ERROR, EXIT_EXECUTION, result.log, detail
+        )
+    if result.status == procs.STATUS_FAILED:
+        return UnityStep("unity-coverage-upload", procs.STATUS_FAILED, 1, result.log, detail)
+    return UnityStep("unity-coverage-upload", procs.STATUS_PASSED, 0, result.log, detail)

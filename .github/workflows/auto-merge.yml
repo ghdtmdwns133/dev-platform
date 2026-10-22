@@ -1,11 +1,7 @@
 name: Auto-merge
 
 on:
-  workflow_call:
-    secrets:
-      automerge_token:
-        description: Optional PAT used to enable auto-merge for Dependabot pull requests.
-        required: false
+  workflow_call: {}
 
 permissions:
   contents: read
@@ -28,7 +24,7 @@ jobs:
       - name: Enable auto-merge
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.automerge_token || github.token }}
+          GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           LABELS: ${{ toJSON(github.event.pull_request.labels) }}
@@ -57,6 +53,6 @@ jobs:
           if gh pr merge --auto --squash "$PR_URL" 2>"$error_file"; then
             echo "::notice::Auto-merge enabled for ${PR_URL}"
           else
-            echo "::warning::Could not enable auto-merge for ${PR_URL}; configure AUTOMERGE_TOKEN or merge manually"
+            echo "::warning::Could not enable auto-merge for ${PR_URL}; merge manually"
             cat "$error_file"
           fi

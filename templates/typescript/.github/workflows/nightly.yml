@@ -24,5 +24,3 @@ jobs:
     with:
       profile: __PROFILE__
       platform-ref: __PLATFORM_REF__
-    secrets:
-      copilot_assign_token: ${{ secrets.COPILOT_ASSIGN_TOKEN }}

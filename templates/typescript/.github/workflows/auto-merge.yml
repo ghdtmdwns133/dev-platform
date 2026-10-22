@@ -14,5 +14,3 @@ jobs:
       contents: write
       pull-requests: write
     uses: __OWNER__/dev-platform/.github/workflows/auto-merge.yml@__PLATFORM_REF__
-    secrets:
-      automerge_token: ${{ secrets.AUTOMERGE_TOKEN }}

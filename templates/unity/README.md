@@ -47,6 +47,6 @@ runs.
 The caller `.github/workflows/release.yml` runs release-please on pushes to
 `main`; when a release is created, the same workflow runs
 `devctl unity build` on `["self-hosted","windows","unity"]`, zips
-`artifacts/unity-build` and attaches the zip to the release. Configure
-`RELEASE_TOKEN` so release PRs trigger CI; see `docs/ADOPTION.md` and
-`docs/UNITY-CI.md`.
+`artifacts/unity-build` and attaches the zip to the release. The release
+workflow dispatches the caller CI on the release branch so required checks run
+without a personal access token; see `docs/ADOPTION.md` and `docs/UNITY-CI.md`.

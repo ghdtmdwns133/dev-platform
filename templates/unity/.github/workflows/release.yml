@@ -15,6 +15,7 @@ jobs:
   platform-release:
     name: platform-release
     permissions:
+      actions: write
       contents: write
       pull-requests: write
     uses: __OWNER__/dev-platform/.github/workflows/release.yml@__PLATFORM_REF__
@@ -26,5 +27,3 @@ jobs:
       artifact-name: unity-build
       runs-on: '["self-hosted","windows","unity"]'
       platform-ref: __PLATFORM_REF__
-    secrets:
-      release_token: ${{ secrets.RELEASE_TOKEN }}

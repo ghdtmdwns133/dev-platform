@@ -11,8 +11,6 @@
 - Budgets and spending limits are configured only in the billing UI:
   `https://github.com/settings/billing/budgets`. The REST budget API is
   organization-only.
-- Copilot code review and cloud agent sessions consume Actions minutes on
-  private repositories.
 - Public repositories use free standard runners; the Unity self-hosted runner
   is never attached to a public repository.
 
@@ -30,6 +28,9 @@
 - Dependabot is grouped: minor and patch updates share one PR per ecosystem,
   major updates get their own, and the open PR limit is 5.
 - Unity coverage upload is opt-in and local; it is never part of a CI run.
+- Copilot cloud agent is not used by the pipeline (student quota too small);
+  failure issues include the exact local repro command
+  (`devctl verify --profile <p>`).
 - `devctl` has no usage command. Query usage directly:
 
   ```bash

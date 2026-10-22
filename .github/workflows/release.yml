@@ -32,15 +32,16 @@ on:
         required: false
         default: '"ubuntu-latest"'
         type: string
+      ci-workflow:
+        description: Caller workflow file dispatched on the release pull request branch.
+        required: false
+        default: ci.yml
+        type: string
       platform-ref:
         description: dev-platform ref checked out for the CLI.
         required: false
         default: v1
         type: string
-    secrets:
-      release_token:
-        description: Optional PAT that lets release-please pull requests trigger CI.
-        required: false
 
 permissions:
   contents: read
@@ -51,6 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      actions: write
       contents: write
       pull-requests: write
     outputs:
@@ -79,7 +81,7 @@ jobs:
         id: release
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
-          token: ${{ secrets.release_token || github.token }}
+          token: ${{ github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
       - name: Label release PR for auto-merge
@@ -98,6 +100,30 @@ jobs:
               ;;
           esac
           gh pr edit "$number" --add-label automerge
+          if ! gh pr merge --auto --squash "$number"; then
+            echo "::warning::Could not enable auto-merge for release PR #${number}"
+          fi
+      - name: Dispatch CI on the release branch
+        if: ${{ steps.release.outputs.pr != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_JSON: ${{ steps.release.outputs.pr }}
+          CI_WORKFLOW: ${{ inputs.ci-workflow }}
+        run: |
+          set -euo pipefail
+          branch=$(printf '%s' "$PR_JSON" | jq -r 'if type == "object" then .headBranchName // empty else empty end')
+          if [ -z "$branch" ]; then
+            number=$(printf '%s' "$PR_JSON" | jq -r 'if type == "number" then . else empty end')
+            if [ -n "$number" ]; then
+              branch=$(gh pr view "$number" --json headRefName --jq .headRefName --repo "$GITHUB_REPOSITORY")
+            fi
+          fi
+          if [ -z "$branch" ]; then
+            echo "::notice::release-please did not report a pull request branch"
+            exit 0
+          fi
+          gh workflow run "$CI_WORKFLOW" --ref "$branch" --repo "$GITHUB_REPOSITORY"
 
   build:
     name: build

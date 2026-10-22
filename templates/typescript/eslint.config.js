@@ -4,7 +4,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["coverage", "dist", "node_modules"],
+    ignores: [".dev-platform/**", "artifacts/**", "coverage/**", "dist/**", "node_modules/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -19,6 +19,11 @@ export default tseslint.config(
   },
   {
     files: ["**/*.{ts,tsx}"],
+    languageOptions: {
+      parserOptions: {
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
     },

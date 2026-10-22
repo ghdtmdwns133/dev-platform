@@ -11,6 +11,10 @@ inputs:
     description: Issue label used to find existing failure issues.
     required: false
     default: ci-alert
+  profile:
+    description: devctl profile named in the local repro command.
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -18,9 +22,11 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
         LABEL: ${{ inputs.label }}
         TITLE: ${{ inputs.title }}
         STATUS: ${{ inputs.status }}
+        PROFILE: ${{ inputs.profile }}
       run: |
         set -euo pipefail
         gh label create "$LABEL" --force >/dev/null 2>&1 || true
@@ -30,21 +36,13 @@ runs:
           "- Commit: ${GITHUB_SHA}" \
           "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
           "- Failed step: ${STATUS}")
+        if [ -n "${PROFILE:-}" ]; then
+          body=$(printf '%s\n%s' "$body" "- Local repro: \`devctl verify --profile ${PROFILE}\`")
+        fi
         existing=$(gh issue list --state open --label "$LABEL" --limit 100 --json number,title \
           --jq '[.[] | select(.title == env.TITLE)] | first | .number // empty')
         if [ -n "$existing" ]; then
           gh issue comment "$existing" --body "$body"
-          number="$existing"
         else
-          url=$(gh issue create --title "$TITLE" --label "$LABEL" --body "$body")
-          number="${url##*/}"
-        fi
-        if [ -n "${COPILOT_ASSIGN_TOKEN:-}" ]; then
-          if GH_TOKEN="$COPILOT_ASSIGN_TOKEN" gh issue edit "$number" --add-assignee "@copilot"; then
-            echo "::notice::Assigned issue #${number} to Copilot"
-          else
-            echo "::warning::Could not assign issue #${number} to Copilot"
-          fi
-        else
-          echo "::notice::COPILOT_ASSIGN_TOKEN not set; skipping Copilot assignment"
+          gh issue create --title "$TITLE" --label "$LABEL" --body "$body"
         fi

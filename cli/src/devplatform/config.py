@@ -46,7 +46,8 @@ DEFAULT_UNITY: dict[str, Any] = {
     "testPlatforms": ["EditMode", "PlayMode"],
     "buildTarget": "StandaloneWindows64",
     "odinEntryPoint": "ProjectDelta.Editor.DevPlatform.OdinValidatorEntryPoint.Run",
-    "playmodeNographics": False,
+    "playmodeMode": "gui",
+    "retryFailed": 1,
     "coverageAssemblyFilters": ["-*Tests*"],
     "buildOutput": "artifacts/unity-build/ProjectDelta.exe",
 }
@@ -165,9 +166,12 @@ def _validate_unity(value: Any) -> dict[str, Any]:
     unity["coverageAssemblyFilters"] = _expect_str_list(
         unity["coverageAssemblyFilters"], "unity.coverageAssemblyFilters"
     )
-    unity["playmodeNographics"] = _expect_bool(
-        unity["playmodeNographics"], "unity.playmodeNographics"
-    )
+    unity["playmodeMode"] = _expect_str(unity["playmodeMode"], "unity.playmodeMode")
+    if unity["playmodeMode"] not in {"gui", "batch"}:
+        raise _error('unity.playmodeMode must be "gui" or "batch"')
+    unity["retryFailed"] = _expect_int(unity["retryFailed"], "unity.retryFailed")
+    if unity["retryFailed"] < 0:
+        raise _error("unity.retryFailed must be zero or greater")
     return unity
 
 

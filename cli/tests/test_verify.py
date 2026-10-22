@@ -162,7 +162,7 @@ def test_python_success_writes_summary(tmp_path: Path) -> None:
     ]
     assert summary["coverage"]["line"] == 90.0
     assert summary["coverage"]["minimum"] == 80
-    assert summary["tests"] == {"passed": 3, "failed": 0, "skipped": 0}
+    assert summary["tests"] == {"passed": 3, "failed": 0, "skipped": 0, "flaky": []}
     assert summary["artifacts"]
     assert (reports / "python/summary.md").is_file()
 
@@ -264,19 +264,18 @@ def test_dotnet_success(tmp_path: Path) -> None:
     assert code == 0
     summary = json.loads((reports / "dotnet/summary.json").read_text(encoding="utf-8"))
     assert summary["coverage"]["line"] == 88.0
-    assert summary["tests"] == {"passed": 4, "failed": 0, "skipped": 0}
+    assert summary["tests"] == {"passed": 4, "failed": 0, "skipped": 0, "flaky": []}
 
 
 def test_unity_verify_with_mocked_editor(tmp_path: Path, monkeypatch) -> None:
     root = make_unity_tree(tmp_path / "project")
     config = config_for(root, "unity")
     reports = tmp_path / "reports"
-    for platform in ("editmode", "playmode"):
-        write_text(
-            reports / f"unity/coverage-{platform}/Report/Summary.xml",
-            "<CoverageReport><Summary><Coveredlines>45</Coveredlines>"
-            "<Coverablelines>50</Coverablelines></Summary></CoverageReport>",
-        )
+    write_text(
+        reports / "unity/coverage/Report/Summary.xml",
+        "<CoverageReport><Summary><Coveredlines>45</Coveredlines>"
+        "<Coverablelines>50</Coverablelines></Summary></CoverageReport>",
+    )
 
     monkeypatch.setattr(unity, "require_editor", lambda config, root: Path("Unity.exe"))
     monkeypatch.setattr(unity, "check_editor_version", lambda config, editor: None)
@@ -289,7 +288,12 @@ def test_unity_verify_with_mocked_editor(tmp_path: Path, monkeypatch) -> None:
             0,
             None,
             "ok",
-            {"passed": 10, "failed": 0, "skipped": 1},
+            {
+                "passed": 10,
+                "failed": 0,
+                "skipped": 1,
+                "flaky": ["Tests.Flaky"] if platform == "PlayMode" else [],
+            },
         )
 
     monkeypatch.setattr(unity, "run_tests", fake_run_tests)
@@ -297,7 +301,12 @@ def test_unity_verify_with_mocked_editor(tmp_path: Path, monkeypatch) -> None:
     assert code == 0
     summary = json.loads((reports / "unity/summary.json").read_text(encoding="utf-8"))
     assert summary["coverage"]["line"] == 90.0
-    assert summary["tests"] == {"passed": 20, "failed": 0, "skipped": 2}
+    assert summary["tests"] == {
+        "passed": 20,
+        "failed": 0,
+        "skipped": 2,
+        "flaky": ["Tests.Flaky"],
+    }
     names = [step["name"] for step in summary["steps"]]
     assert names == ["unity-integrity", "unity-editmode", "unity-playmode", "unity-coverage"]
 

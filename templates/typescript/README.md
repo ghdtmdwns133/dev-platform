@@ -28,8 +28,7 @@ it exits 2 when credentials are missing.
 
 `.github/workflows/ci.yml` calls `quality.yml` and `security.yml` at
 `__PLATFORM_REF__`. Both report independently as `platform-verify` and
-`platform-security`. `copilot-setup-steps.yml` lets the Copilot cloud agent run
-the same `devctl verify` command.
+`platform-security`.
 
 ## Release automation
 

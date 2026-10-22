@@ -43,18 +43,13 @@ Doppler dependency.
 | `dev-flow-web` | `VITE_SENTRY_DSN`     | Browser DSN (public value, managed with the rest).  |
 | `project-delta`| `CODECOV_TOKEN`       | Local Unity coverage upload.                        |
 | `dev-platform` | —                     | No service secrets.                                 |
-| all            | `COPILOT_ASSIGN_TOKEN`| Optional fine-grained PAT that assigns failure issues to Copilot. |
-| all            | `AUTOMERGE_TOKEN`     | Optional fine-grained PAT for Dependabot auto-merge.|
-| all            | `RELEASE_TOKEN`       | Optional fine-grained PAT so release PRs trigger CI.|
 
 `UNITY_LICENSE`, `UNITY_EMAIL` and `UNITY_PASSWORD` exist only for the GameCI
 runner mode. The Student named-user license cannot be activated through GameCI,
 so these stay unset.
 
-`COPILOT_ASSIGN_TOKEN` needs issue write access and the ability to assign the
-Copilot agent. `AUTOMERGE_TOKEN` needs contents and pull-requests write.
-`RELEASE_TOKEN` needs contents and pull-requests write so release-please can
-create pull requests that trigger workflows.
+No personal access token is required by the automation: auto-merge, release
+PRs and failure issues use `github.token`.
 
 ## Fallback without Doppler
 
