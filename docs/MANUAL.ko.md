@@ -106,7 +106,7 @@ gh api repos/ghdtmdwns133/project-delta/actions/runners --jq '.runners[] | {name
 gh run list --status queued -L 5
 ```
 
-`status`가 `online`이면 정상이다. 재시작과 중지는 `C:/ghr/README.txt`의 명령을 쓰고, 시작 로그는 `C:/ghr/runner/_diag/`에 있다. 큐에 남은 실행은 `gh run cancel <run-id>`로 정리한다.
+`status`가 `online`이면 정상이다. 러너의 `bash`는 WSL bash로 해석되므로 self-hosted 작업은 `pwsh`로 실행된다. 재시작과 중지는 `C:/ghr/README.txt`의 명령을 쓰고, 시작 로그는 `C:/ghr/runner/_diag/`에 있다. 큐에 남은 실행은 `gh run cancel <run-id>`로 정리한다.
 
 ```bat
 start "" /min C:\ghr\runner\run.cmd
@@ -179,6 +179,14 @@ uv run --project C:/dev/dev-platform/cli devctl unity cloud-build --commit <sha>
 
 UBA 무료 한도는 Windows 200분/월이고, 소진되면 결제 수단이 없는 한 빌드가 멈춘다. 설정은 [UNITY-CI.md](UNITY-CI.md)에 있다.
 
+### 5.4 릴리스 자산만 다시 빌드
+
+릴리스는 만들어졌는데 자산 빌드가 실패했으면(PC 꺼짐, 러너 오프라인) `rebuild-tag`로 같은 태그를 다시 빌드한다. release-please, 자동 병합, 병합 대기는 모두 건너뛰고, 해당 태그를 기준으로 빌드한 뒤 자산을 `--clobber`로 교체한다. 릴리스가 없으면 실행이 exit 1로 실패한다.
+
+```bash
+gh workflow run release.yml -R ghdtmdwns133/project-delta --ref main -f rebuild-tag=project-delta-v0.1.0
+```
+
 ## 6. Dependabot PR
 
 Dependabot은 주 1회, 생태계별로 묶어 PR을 연다. minor와 patch는 한 PR, major는 별도 PR이고 열린 PR 상한은 5개다. 자동 병합은 `auto-merge.yml` caller가 있는 저장소에서 `dependabot[bot]`의 patch/minor PR, 또는 소유자나 `github-actions[bot]`이 만들고 `automerge` 라벨이 붙은 PR에 걸린다. 실제 병합은 필수 검사 통과가 조건이다. major PR, 런타임 동작이 바뀌는 patch, Unity 패키지 major는 직접 읽고 병합한다.
@@ -236,5 +244,7 @@ gh api -X POST repos/ghdtmdwns133/<repo>/actions/runs/<run-id>/approve
 **`unity-coverage` 단계만 실패한다.** `coverage.minimum`보다 측정값이 낮다. `summary.json`의 `coverage.line`을 확인하고 테스트를 보강하거나 하한을 근거와 함께 조정한다. 리포트 자체가 없으면 실패가 아니라 경고다.
 
 **Unity 검증이 exit 2로 끝난다.** 에디터를 찾지 못했거나(`Unity 6000.5.1f1 editor not found`), 에디터가 이미 실행 중이다(`Unity editor is running`). 에디터를 닫고 다시 실행하고, 버전이 다르면 `unity.version`과 `ProjectSettings/ProjectVersion.txt`를 맞춘다.
+
+**릴리스는 생겼는데 자산이 없다.** 자산 빌드만 실패한 경우다. `gh workflow run release.yml -R ghdtmdwns133/<repo> --ref main -f rebuild-tag=<tag>`로 그 태그를 다시 빌드하면 자산이 교체된다(5.4).
 
 **릴리스가 바로 생기지 않는다.** release-please가 만든 PR은 `GITHUB_TOKEN` 때문에 CI가 `action_required`로 시작하고, release 잡이 이를 승인한 뒤 `merge-wait-minutes`(기본 15)까지 기다린다. 시간이 지나면 notice만 남기고 성공으로 끝나며, 릴리스는 다음 push나 04:23 schedule에서 만들어진다. `merge-wait-minutes: 0`인 `project-delta`는 처음부터 다음 트리거를 기다린다. 막힌 체크는 `gh pr checks <number>`로 확인한다.

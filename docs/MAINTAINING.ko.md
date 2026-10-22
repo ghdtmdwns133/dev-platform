@@ -246,6 +246,12 @@ git rev-list -n 1 v1
 
 **릴리스가 예상 시점에 생기지 않을 때.** release 잡은 Release PR을 승인하고 `merge-wait-minutes`(기본 15)만큼만 기다린다. 초과하면 `::notice::`로 끝나므로 다음 `main` push나 매일 `23 4 * * *` schedule까지 기다린다. `merge-wait-minutes: 0`인 저장소는 이 대기를 아예 하지 않는다. release-please PR이 `main`과 충돌하면 `always-update: true`가 rebase하지만, 충돌이 계속되면 PR을 손으로 갱신한다.
 
+**릴리스는 있는데 자산이 없을 때.** 자산 빌드만 실패한 경우(PC 꺼짐, 러너 오프라인)는 `rebuild-tag`로 복구한다. `release-please` 잡은 태그 존재를 `gh release view`로 확인한 뒤 release-please·자동 병합·대기 단계를 모두 건너뛰고, `release_created=true`, `tag_name=<rebuild-tag>`로 build/publish를 실행한다. publish는 `gh release upload --clobber`로 기존 자산을 교체한다.
+
+```bash
+gh workflow run release.yml -R ghdtmdwns133/project-delta --ref main -f rebuild-tag=project-delta-v0.1.0
+```
+
 ## 9. 알려진 제약
 
 - **Unity 학생 라이선스.** 보유 라이선스는 named-user Student라 시리얼도 `.ulf`도 없다. GameCI v4가 지원하는 활성화 방식이 아니고, Unity Editor Software Terms §2.8은 서드파티가 클라우드/원격 서버에서 에디터를 실행하는 것을 금지한다. 그래서 GitHub 호스팅 러너에서 Unity를 돌리는 경로는 `unity-runner: gameci`로 구현만 되어 있고 기본값이 아니다.
@@ -254,4 +260,5 @@ git rev-list -n 1 v1
 - **docs-only push.** caller와 `self-test.yml`은 `paths-ignore: [docs/**, "**/*.md"]`라서 문서만 바꾸면 CI가 생기지 않는다. 필수 검사가 있는 저장소에서는 소유자 bypass로 병합하거나 코드 변경을 섞어야 한다.
 - **Windows 전용 Unity 실행.** `devctl`의 에디터 탐색은 `unity.editorPath`, `UNITY_EDITOR_PATH`, `C:/Program Files/Unity/Hub/Editor/<version>/Editor/Unity.exe` 순서다. PlayMode는 `unity.playmodeMode: "gui"`에서 창을 열고 입력을 주입하므로 데스크톱이 필요하다. `unity-assets`만 에디터 없이 어디서나 돈다.
 - **버전 검사의 강도.** `devctl versions --check`는 uv/npm/trivy/gitleaks/zizmor/actionlint 불일치를 경고로만 보고한다. 이 도구들의 실제 핀은 워크플로와 action에 있으므로 `versions.json`만 고쳐서는 CI 동작이 바뀌지 않는다.
+- **self-hosted 러너의 `bash`.** Windows self-hosted 러너에서 `bash`는 WSL bash로 해석된다. 그 러너에서 실행될 수 있는 단계에는 `shell: bash`를 추가하지 말고 `pwsh`를 쓰거나 `shell`을 생략해 러너 기본값을 쓴다. self-hosted Unity 작업과 `release.yml`의 Windows 빌드 분기가 이 규칙을 따른다.
 - **Azure 미사용.** 검증과 빌드는 GitHub 호스팅 러너, Unity용 self-hosted PC, Unity Build Automation만 쓴다. Azure 리소스는 만들지 않는다.
