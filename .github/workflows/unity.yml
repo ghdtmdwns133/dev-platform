@@ -1,0 +1,386 @@
+name: Unity
+
+on:
+  workflow_call:
+    inputs:
+      unity-runner:
+        description: Where to run Unity (none, self-hosted or gameci).
+        required: false
+        default: none
+        type: string
+      unity-version:
+        description: Unity editor version.
+        required: false
+        default: 6000.5.1f1
+        type: string
+      project-path:
+        description: Unity project directory relative to the repository root.
+        required: false
+        default: "."
+        type: string
+      test-mode:
+        description: Unity test mode (all, EditMode or PlayMode).
+        required: false
+        default: all
+        type: string
+      build-target:
+        description: Unity build target.
+        required: false
+        default: StandaloneWindows64
+        type: string
+      build:
+        description: Build and zip a player (tags and nightly only).
+        required: false
+        default: false
+        type: boolean
+      enable-odin:
+        description: Run the Odin validation entry point after Unity tests.
+        required: false
+        default: false
+        type: boolean
+      platform-ref:
+        description: dev-platform ref checked out for the CLI.
+        required: false
+        default: v1
+        type: string
+    secrets:
+      UNITY_LICENSE:
+        description: Unity license file contents.
+        required: false
+      UNITY_EMAIL:
+        description: Unity account email.
+        required: false
+      UNITY_PASSWORD:
+        description: Unity account password.
+        required: false
+      copilot_assign_token:
+        description: Fine-grained PAT used to assign failure issues to Copilot.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      unity_changed: ${{ steps.diff.outputs.unity_changed }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect Unity-relevant changes
+        id: diff
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          changed=true
+          base=""
+          case "$EVENT_NAME" in
+            push) base="${BEFORE_SHA:-}" ;;
+            pull_request) base="${PR_BASE_SHA:-}" ;;
+            *) base="" ;;
+          esac
+          if [ -n "$base" ] && [ "$base" != "0000000000000000000000000000000000000000" ]; then
+            if files=$(git diff --name-only "$base" "$HEAD_SHA" 2>/dev/null); then
+              if printf '%s\n' "$files" | grep -Eq '^(Assets|Packages|ProjectSettings)/'; then
+                changed=true
+              else
+                changed=false
+              fi
+            fi
+          fi
+          echo "unity_changed=${changed}" >> "$GITHUB_OUTPUT"
+
+  integrity:
+    name: integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Report Unity availability
+        if: ${{ inputs.unity-runner == 'none' }}
+        shell: bash
+        run: echo "::notice::Unity runner is 'none'; Unity tests/build skipped."
+      - name: Verify Unity project integrity
+        uses: ghdtmdwns133/dev-platform/actions/verify@v1
+        with:
+          profile: unity-assets
+          working-directory: ${{ inputs.project-path }}
+          ref: ${{ inputs.platform-ref }}
+
+  tests:
+    name: tests
+    needs: changes
+    if: ${{ inputs.unity-runner == 'self-hosted' }}
+    runs-on: [self-hosted, windows, unity]
+    timeout-minutes: 60
+    concurrency:
+      group: unity-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          clean: false
+          persist-credentials: false
+      - name: Check out dev-platform
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ghdtmdwns133/dev-platform
+          ref: ${{ inputs.platform-ref }}
+          path: .dev-platform
+          clean: false
+          persist-credentials: false
+      - name: Check uv availability
+        shell: pwsh
+        run: uv --version
+      - name: Report no Unity-relevant changes
+        if: ${{ needs.changes.outputs.unity_changed != 'true' }}
+        shell: pwsh
+        run: Write-Host "::notice::no Unity-relevant changes"
+      - name: Run Unity verification
+        if: ${{ needs.changes.outputs.unity_changed == 'true' }}
+        shell: pwsh
+        run: uv run --project "$env:GITHUB_WORKSPACE/.dev-platform/cli" devctl verify --profile unity
+      - name: Run Odin validation
+        if: ${{ needs.changes.outputs.unity_changed == 'true' && inputs.enable-odin }}
+        shell: pwsh
+        run: uv run --project "$env:GITHUB_WORKSPACE/.dev-platform/cli" devctl unity odin
+
+  tests-gameci:
+    name: tests-gameci
+    needs: changes
+    if: ${{ inputs.unity-runner == 'gameci' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check out dev-platform
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ghdtmdwns133/dev-platform
+          ref: ${{ inputs.platform-ref }}
+          path: .dev-platform
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Report no Unity-relevant changes
+        if: ${{ needs.changes.outputs.unity_changed != 'true' }}
+        shell: bash
+        run: echo "::notice::no Unity-relevant changes"
+      - name: Run Unity tests
+        if: ${{ needs.changes.outputs.unity_changed == 'true' }}
+        uses: game-ci/unity-test-runner@32e57712352b500e17974b245a6dce9e11a73213 # v4
+        with:
+          projectPath: ${{ inputs.project-path }}
+          unityVersion: ${{ inputs.unity-version }}
+          testMode: ${{ inputs.test-mode }}
+          artifactsPath: ${{ inputs.project-path }}/artifacts/unity-tests
+          customParameters: -enableCodeCoverage
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+      - name: Convert NUnit results to JUnit
+        if: always() && needs.changes.outputs.unity_changed == 'true'
+        shell: bash
+        env:
+          PROJECT_PATH: ${{ inputs.project-path }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${PROJECT_PATH}/artifacts/reports/unity"
+          uv run --project "${GITHUB_WORKSPACE}/.dev-platform/cli" devctl --root "$PROJECT_PATH" unity junit \
+            --in "${PROJECT_PATH}/artifacts/unity-tests" \
+            --out "${PROJECT_PATH}/artifacts/reports/unity/junit.xml"
+      - name: Upload Unity test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unity-test-results
+          path: ${{ inputs.project-path }}/artifacts/unity-tests/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  build:
+    name: build
+    needs: [changes, tests]
+    if: ${{ inputs.unity-runner == 'self-hosted' && inputs.build }}
+    runs-on: [self-hosted, windows, unity]
+    timeout-minutes: 60
+    concurrency:
+      group: unity-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          clean: false
+          persist-credentials: false
+      - name: Check out dev-platform
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ghdtmdwns133/dev-platform
+          ref: ${{ inputs.platform-ref }}
+          path: .dev-platform
+          clean: false
+          persist-credentials: false
+      - name: Check uv availability
+        shell: pwsh
+        run: uv --version
+      - name: Build player
+        shell: pwsh
+        run: uv run --project "$env:GITHUB_WORKSPACE/.dev-platform/cli" devctl unity build
+      - name: Package build
+        shell: pwsh
+        run: |
+          $ref = $env:GITHUB_REF_NAME -replace '[^A-Za-z0-9._-]', '-'
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Compress-Archive -Path artifacts/unity-build/* -DestinationPath "artifacts/ProjectDelta-$ref.zip" -Force
+      - name: Upload build
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unity-build
+          path: artifacts/ProjectDelta-*.zip
+          if-no-files-found: warn
+          retention-days: 14
+
+  build-gameci:
+    name: build-gameci
+    needs: changes
+    if: ${{ inputs.unity-runner == 'gameci' && inputs.build }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Build player
+        uses: game-ci/unity-builder@4423ee75828dff56037d1d1cfdac6b68e3a6ba00 # v4
+        with:
+          projectPath: ${{ inputs.project-path }}
+          unityVersion: ${{ inputs.unity-version }}
+          targetPlatform: ${{ inputs.build-target }}
+          buildsPath: ${{ inputs.project-path }}/artifacts/unity-build
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+      - name: Package build
+        shell: bash
+        env:
+          PROJECT_PATH: ${{ inputs.project-path }}
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_REF_NAME//\//-}"
+          mkdir -p artifacts
+          (cd "${PROJECT_PATH}/artifacts" && zip -r "${GITHUB_WORKSPACE}/artifacts/ProjectDelta-${ref}.zip" unity-build)
+      - name: Upload build
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unity-build
+          path: artifacts/ProjectDelta-*.zip
+          if-no-files-found: warn
+          retention-days: 14
+
+  odin-gameci:
+    name: odin-gameci
+    needs: changes
+    if: ${{ inputs.unity-runner == 'gameci' && inputs.enable-odin }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Read Odin entry point
+        id: odin
+        shell: bash
+        env:
+          PROJECT_PATH: ${{ inputs.project-path }}
+        run: |
+          set -euo pipefail
+          entry=$(jq -r '.unity.odinEntryPoint // empty' "${PROJECT_PATH}/.devplatform/config.json")
+          if [ -z "$entry" ]; then
+            echo "::error::unity.odinEntryPoint is not configured in .devplatform/config.json"
+            exit 1
+          fi
+          echo "entry=${entry}" >> "$GITHUB_OUTPUT"
+      - name: Run Odin validation entry point
+        uses: game-ci/unity-builder@4423ee75828dff56037d1d1cfdac6b68e3a6ba00 # v4
+        with:
+          projectPath: ${{ inputs.project-path }}
+          unityVersion: ${{ inputs.unity-version }}
+          targetPlatform: ${{ inputs.build-target }}
+          buildMethod: ${{ steps.odin.outputs.entry }}
+          manualExit: true
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+      - name: Upload Odin report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: odin-report
+          path: ${{ inputs.project-path }}/artifacts/reports/unity/odin.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  notify:
+    name: notify
+    needs: [changes, integrity, tests, tests-gameci, build, build-gameci, odin-gameci]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      COPILOT_ASSIGN_TOKEN: ${{ secrets.copilot_assign_token }}
+    steps:
+      - name: Open or update failure issue
+        uses: ghdtmdwns133/dev-platform/actions/notify@v1
+        with:
+          status: unity job failed
+          title: "CI failure: ${{ github.workflow }}"
+          label: ci-alert

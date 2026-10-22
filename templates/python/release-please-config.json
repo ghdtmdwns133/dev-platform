@@ -1,0 +1,9 @@
+{
+  "release-type": "python",
+  "packages": {
+    ".": {
+      "release-type": "python",
+      "package-name": "__PROJECT_SLUG__"
+    }
+  }
+}

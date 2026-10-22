@@ -1,0 +1,121 @@
+name: Nightly
+
+on:
+  workflow_call:
+    inputs:
+      profile:
+        description: Verification profile used by the full verification run.
+        required: true
+        type: string
+      platform-ref:
+        description: dev-platform ref checked out for the CLI.
+        required: false
+        default: v1
+        type: string
+    secrets:
+      copilot_assign_token:
+        description: Fine-grained PAT used to assign failure issues to Copilot.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  deep-security:
+    name: deep-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run deep security scan
+        uses: ghdtmdwns133/dev-platform/actions/security-scan@v1
+        with:
+          severity: MEDIUM,HIGH,CRITICAL
+          upload-sarif: false
+          deep: true
+
+  full-verify:
+    name: full-verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Run full verification
+        uses: ghdtmdwns133/dev-platform/actions/verify@v1
+        with:
+          profile: ${{ inputs.profile }}
+          min-coverage: "0"
+          ref: ${{ inputs.platform-ref }}
+
+  freshness:
+    name: freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Set up Node.js
+        if: ${{ inputs.profile == 'typescript' }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Set up .NET
+        if: ${{ inputs.profile == 'dotnet' }}
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: global.json
+      - name: Check uv lock freshness
+        if: ${{ inputs.profile == 'python' }}
+        shell: bash
+        run: uv lock --check
+      - name: Check outdated npm packages
+        if: ${{ inputs.profile == 'typescript' }}
+        shell: bash
+        run: npm outdated --depth=0 || true
+      - name: Check vulnerable .NET packages
+        if: ${{ inputs.profile == 'dotnet' }}
+        shell: bash
+        run: dotnet list package --vulnerable --include-transitive
+
+  notify:
+    name: notify
+    needs: [deep-security, full-verify, freshness]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      COPILOT_ASSIGN_TOKEN: ${{ secrets.copilot_assign_token }}
+    steps:
+      - name: Open or update failure issue
+        uses: ghdtmdwns133/dev-platform/actions/notify@v1
+        with:
+          status: nightly job failed
+          title: "CI failure: ${{ github.workflow }}"
+          label: ci-alert

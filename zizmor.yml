@@ -1,0 +1,6 @@
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "ghdtmdwns133/*": any
+        "*": hash-pin

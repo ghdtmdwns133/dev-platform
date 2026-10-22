@@ -1,0 +1,26 @@
+name: Upload coverage to Codecov
+description: Upload coverage reports when a token is present and skip with a notice otherwise.
+inputs:
+  files:
+    description: Comma-separated coverage report paths.
+    required: true
+  flags:
+    description: Comma-separated Codecov flags.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Note missing Codecov token
+      if: ${{ env.CODECOV_TOKEN == '' }}
+      shell: bash
+      run: echo "::notice::Codecov skipped (no token)"
+    - name: Upload coverage
+      if: ${{ env.CODECOV_TOKEN != '' }}
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
+      with:
+        token: ${{ env.CODECOV_TOKEN }}
+        files: ${{ inputs.files }}
+        flags: ${{ inputs.flags }}
+        fail_ci_if_error: true
+        verbose: true

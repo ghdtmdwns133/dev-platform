@@ -1,0 +1,28 @@
+name: Sentry source maps
+description: Build the web project with Sentry source map upload when credentials are available.
+inputs:
+  path:
+    description: Project directory to build when working-directory is not set.
+    required: false
+    default: "."
+  working-directory:
+    description: Explicit build directory; overrides path when non-empty.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Note missing Sentry credentials
+      if: ${{ env.SENTRY_AUTH_TOKEN == '' }}
+      shell: bash
+      run: echo "::notice::SENTRY_AUTH_TOKEN not set; Sentry source map upload disabled."
+    - name: Build with Sentry source maps
+      if: ${{ env.SENTRY_AUTH_TOKEN != '' }}
+      shell: bash
+      env:
+        PROJECT_PATH: ${{ inputs.path }}
+        WORKDIR: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        cd "${WORKDIR:-$PROJECT_PATH}"
+        npm run build

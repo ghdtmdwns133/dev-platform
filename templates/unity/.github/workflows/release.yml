@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  platform-release:
+    name: platform-release
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: __OWNER__/dev-platform/.github/workflows/release.yml@__PLATFORM_REF__
+    with:
+      release-type: simple
+      profile: unity
+      build-command: uv run --project .dev-platform/cli devctl unity build; Compress-Archive -Path artifacts/unity-build/* -DestinationPath artifacts/ProjectDelta.zip -Force
+      artifact-path: artifacts/*.zip
+      artifact-name: unity-build
+      runs-on: '["self-hosted","windows","unity"]'
+      platform-ref: __PLATFORM_REF__
+    secrets:
+      release_token: ${{ secrets.RELEASE_TOKEN }}

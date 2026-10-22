@@ -1,0 +1,62 @@
+name: Auto-merge
+
+on:
+  workflow_call:
+    secrets:
+      automerge_token:
+        description: Optional PAT used to enable auto-merge for Dependabot pull requests.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    name: auto-merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Fetch Dependabot metadata
+        id: dependabot
+        if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2
+        with:
+          github-token: ${{ github.token }}
+      - name: Enable auto-merge
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.automerge_token || github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels) }}
+          UPDATE_TYPE: ${{ steps.dependabot.outputs.update-type }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          eligible=false
+          if [ "$PR_AUTHOR" = "dependabot[bot]" ]; then
+            case "$UPDATE_TYPE" in
+              semver-patch | semver-minor | version-update:semver-patch | version-update:semver-minor)
+                eligible=true
+                ;;
+            esac
+          fi
+          if [ "$PR_AUTHOR" = "$REPO_OWNER" ] || [ "$PR_AUTHOR" = "github-actions[bot]" ]; then
+            if printf '%s' "$LABELS" | jq -e 'any(.[]; .name == "automerge")' >/dev/null; then
+              eligible=true
+            fi
+          fi
+          if [ "$eligible" != "true" ]; then
+            echo "::notice::Auto-merge conditions not met for ${PR_URL}"
+            exit 0
+          fi
+          error_file=$(mktemp)
+          if gh pr merge --auto --squash "$PR_URL" 2>"$error_file"; then
+            echo "::notice::Auto-merge enabled for ${PR_URL}"
+          else
+            echo "::warning::Could not enable auto-merge for ${PR_URL}; configure AUTOMERGE_TOKEN or merge manually"
+            cat "$error_file"
+          fi

@@ -1,0 +1,8 @@
+{
+  "profile": "__PROFILE__",
+  "reports": "artifacts/reports",
+  "coverage": {
+    "minimum": __MIN_COVERAGE__,
+    "enabled": true
+  }
+}

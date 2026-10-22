@@ -1,0 +1,14 @@
+{
+  "name": "__PROJECT_SLUG__",
+  "image": "mcr.microsoft.com/devcontainers/dotnet:1-10.0-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/va-h/devcontainers-features/uv:1": {}
+  },
+  "postCreateCommand": "dotnet restore",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-dotnettools.csharp"]
+    }
+  }
+}

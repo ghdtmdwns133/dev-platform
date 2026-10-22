@@ -1,0 +1,111 @@
+name: Quality
+
+on:
+  workflow_call:
+    inputs:
+      profile:
+        description: Verification profile passed to devctl verify.
+        required: true
+        type: string
+      working-directory:
+        description: Project directory relative to the repository root.
+        required: false
+        default: "."
+        type: string
+      platform-ref:
+        description: dev-platform ref checked out for the CLI.
+        required: false
+        default: v1
+        type: string
+      min-coverage:
+        description: Minimum line coverage percentage.
+        required: false
+        default: 0
+        type: number
+      enable-codecov:
+        description: Upload coverage reports to Codecov.
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      codecov_token:
+        description: Codecov upload token.
+        required: false
+      copilot_assign_token:
+        description: Fine-grained PAT used to assign failure issues to Copilot.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CODECOV_TOKEN: ${{ secrets.codecov_token }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Run platform verification
+        uses: ghdtmdwns133/dev-platform/actions/verify@v1
+        with:
+          profile: ${{ inputs.profile }}
+          min-coverage: ${{ inputs.min-coverage }}
+          working-directory: ${{ inputs.working-directory }}
+          ref: ${{ inputs.platform-ref }}
+      - name: Resolve coverage report path
+        id: coverage
+        shell: bash
+        env:
+          PROFILE: ${{ inputs.profile }}
+          WORKDIR: ${{ inputs.working-directory }}
+        run: |
+          set -euo pipefail
+          prefix=""
+          if [ "$WORKDIR" != "." ]; then prefix="${WORKDIR%/}/"; fi
+          case "$PROFILE" in
+            python) files="${prefix}artifacts/reports/python/coverage.xml" ;;
+            typescript) files="${prefix}coverage/coverage-final.json" ;;
+            dotnet) files="${prefix}artifacts/reports/dotnet/**/coverage.cobertura.xml" ;;
+            *)
+              files=""
+              echo "::notice::No Codecov coverage path configured for profile ${PROFILE}"
+              ;;
+          esac
+          echo "files=${files}" >> "$GITHUB_OUTPUT"
+      - name: Warn about missing Codecov token
+        if: ${{ inputs.enable-codecov && env.CODECOV_TOKEN == '' }}
+        shell: bash
+        run: echo "::warning::Codecov enabled but CODECOV_TOKEN missing"
+      - name: Upload coverage to Codecov
+        if: ${{ inputs.enable-codecov && env.CODECOV_TOKEN != '' && steps.coverage.outputs.files != '' }}
+        uses: ghdtmdwns133/dev-platform/actions/codecov@v1
+        with:
+          files: ${{ steps.coverage.outputs.files }}
+          flags: ${{ inputs.profile }}
+
+  notify:
+    name: notify
+    needs: verify
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      COPILOT_ASSIGN_TOKEN: ${{ secrets.copilot_assign_token }}
+    steps:
+      - name: Open or update failure issue
+        uses: ghdtmdwns133/dev-platform/actions/notify@v1
+        with:
+          status: verify job failed
+          title: "CI failure: ${{ github.workflow }}"
+          label: ci-alert

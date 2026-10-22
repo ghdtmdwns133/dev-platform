@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  platform-release:
+    name: platform-release
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: __OWNER__/dev-platform/.github/workflows/release.yml@__PLATFORM_REF__
+    with:
+      release-type: python
+      profile: python
+      build-command: uv build
+      artifact-path: dist
+      artifact-name: dist
+      platform-ref: __PLATFORM_REF__
+    secrets:
+      release_token: ${{ secrets.RELEASE_TOKEN }}

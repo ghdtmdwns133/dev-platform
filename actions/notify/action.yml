@@ -1,0 +1,50 @@
+name: Notify CI failure
+description: Create or update the open failure issue for a workflow.
+inputs:
+  status:
+    description: Short description of what failed.
+    required: true
+  title:
+    description: Issue title; an open issue with the same title is commented on instead of duplicated.
+    required: true
+  label:
+    description: Issue label used to find existing failure issues.
+    required: false
+    default: ci-alert
+runs:
+  using: composite
+  steps:
+    - name: Create or update failure issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        LABEL: ${{ inputs.label }}
+        TITLE: ${{ inputs.title }}
+        STATUS: ${{ inputs.status }}
+      run: |
+        set -euo pipefail
+        gh label create "$LABEL" --force >/dev/null 2>&1 || true
+        body=$(printf '%s\n' \
+          "- Workflow: ${GITHUB_WORKFLOW}" \
+          "- Job: ${GITHUB_JOB}" \
+          "- Commit: ${GITHUB_SHA}" \
+          "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+          "- Failed step: ${STATUS}")
+        existing=$(gh issue list --state open --label "$LABEL" --limit 100 --json number,title \
+          --jq '[.[] | select(.title == env.TITLE)] | first | .number // empty')
+        if [ -n "$existing" ]; then
+          gh issue comment "$existing" --body "$body"
+          number="$existing"
+        else
+          url=$(gh issue create --title "$TITLE" --label "$LABEL" --body "$body")
+          number="${url##*/}"
+        fi
+        if [ -n "${COPILOT_ASSIGN_TOKEN:-}" ]; then
+          if GH_TOKEN="$COPILOT_ASSIGN_TOKEN" gh issue edit "$number" --add-assignee "@copilot"; then
+            echo "::notice::Assigned issue #${number} to Copilot"
+          else
+            echo "::warning::Could not assign issue #${number} to Copilot"
+          fi
+        else
+          echo "::notice::COPILOT_ASSIGN_TOKEN not set; skipping Copilot assignment"
+        fi

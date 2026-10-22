@@ -1,0 +1,73 @@
+name: Security
+
+on:
+  workflow_call:
+    inputs:
+      upload-sarif:
+        description: Upload SARIF reports to GitHub code scanning.
+        required: false
+        default: false
+        type: boolean
+      severity:
+        description: Comma-separated trivy severities that fail the scan.
+        required: false
+        default: HIGH,CRITICAL
+        type: string
+      deep:
+        description: Run the deep nightly scan (pedantic zizmor, medium severity).
+        required: false
+        default: false
+        type: boolean
+      platform-ref:
+        description: dev-platform ref consumed by the scan composite.
+        required: false
+        default: v1
+        type: string
+    secrets:
+      copilot_assign_token:
+        description: Fine-grained PAT used to assign failure issues to Copilot.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run security scan
+        uses: ghdtmdwns133/dev-platform/actions/security-scan@v1
+        with:
+          severity: ${{ inputs.severity }}
+          upload-sarif: ${{ inputs.upload-sarif }}
+          deep: ${{ inputs.deep }}
+
+  notify:
+    name: notify
+    needs: scan
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      COPILOT_ASSIGN_TOKEN: ${{ secrets.copilot_assign_token }}
+    steps:
+      - name: Open or update failure issue
+        uses: ghdtmdwns133/dev-platform/actions/notify@v1
+        with:
+          status: security scan job failed
+          title: "CI failure: ${{ github.workflow }}"
+          label: ci-alert

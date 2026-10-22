@@ -1,0 +1,17 @@
+artifacts/
+.venv/
+node_modules/
+bin/
+obj/
+coverage/
+.dev-platform/
+.env
+.env.*
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+dist/
+TestResults/
+*.trx

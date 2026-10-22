@@ -1,0 +1,37 @@
+[project]
+name = "devplatform"
+version = "1.0.0"
+description = "Single verification command shared by local development and GitHub Actions"
+requires-python = ">=3.12,<3.13"
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+devctl = "devplatform.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/devplatform"]
+
+[dependency-groups]
+dev = ["ruff", "pytest", "pytest-cov"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["SIM117"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["fixtures", "node_modules", ".venv"]
+addopts = "-q"

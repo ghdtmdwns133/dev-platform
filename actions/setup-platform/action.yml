@@ -1,0 +1,25 @@
+name: Setup dev-platform
+description: Check out dev-platform and verify the local toolchain against versions.json.
+inputs:
+  ref:
+    description: dev-platform git ref to check out.
+    required: false
+    default: v1
+runs:
+  using: composite
+  steps:
+    - name: Check out dev-platform
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        repository: ghdtmdwns133/dev-platform
+        ref: ${{ inputs.ref }}
+        path: .dev-platform
+        persist-credentials: false
+    - name: Install uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      with:
+        python-version: "3.12"
+        enable-cache: true
+    - name: Check tool versions
+      shell: bash
+      run: uv run --project .dev-platform/cli devctl versions --check

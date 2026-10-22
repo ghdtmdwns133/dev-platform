@@ -1,0 +1,6 @@
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        "__OWNER__/*": any
+        "*": hash-pin

@@ -1,0 +1,234 @@
+name: Self-test
+
+on:
+  push:
+    paths-ignore:
+      - docs/**
+      - "**/*.md"
+  pull_request:
+    paths-ignore:
+      - docs/**
+      - "**/*.md"
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cli:
+    name: cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Sync CLI dependencies
+        shell: bash
+        run: uv sync --project cli --frozen
+      - name: Lint CLI
+        shell: bash
+        run: uv run --project cli ruff check cli
+      - name: Check CLI formatting
+        shell: bash
+        run: uv run --project cli ruff format --check cli
+      - name: Test CLI
+        shell: bash
+        run: uv run --project cli pytest cli/tests -q
+
+  templates:
+    name: templates (${{ matrix.template }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [python, typescript, dotnet]
+    env:
+      TEMPLATE: ${{ matrix.template }}
+      DEST: ${{ github.workspace }}/.self-test/${{ matrix.template }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Render template
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$DEST"
+          uv run --project cli devctl init --template "$TEMPLATE" \
+            --name "self-test-$TEMPLATE" --dest "$DEST"
+      - name: Set up Node.js
+        if: ${{ matrix.template == 'typescript' }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: .self-test/${{ matrix.template }}/package-lock.json
+      - name: Set up .NET
+        if: ${{ matrix.template == 'dotnet' }}
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          global-json-file: .self-test/${{ matrix.template }}/global.json
+      - name: Verify rendered project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$DEST"
+          uv run --project "$GITHUB_WORKSPACE/cli" devctl verify --profile "$TEMPLATE"
+
+  template-unity:
+    name: templates (unity)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      DEST: ${{ github.workspace }}/.self-test/unity
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Render template
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$DEST"
+          uv run --project cli devctl init --template unity --name self-test-unity --dest "$DEST"
+      - name: List generated files
+        shell: bash
+        run: find "$DEST" -type f | sort
+      - name: Check tool versions
+        shell: bash
+        run: uv run --project cli devctl versions --check
+
+  devcontainer:
+    name: devcontainer (${{ matrix.template }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [python, typescript, dotnet]
+    env:
+      TEMPLATE: ${{ matrix.template }}
+      DEST: ${{ github.workspace }}/.self-test/${{ matrix.template }}
+      DEVCONTAINER_CLI: "@devcontainers/cli@0.89.0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Render template
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$DEST"
+          uv run --project cli devctl init --template "$TEMPLATE" \
+            --name "self-test-$TEMPLATE" --dest "$DEST"
+      - name: Check out dev-platform into the rendered project
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          path: .self-test/${{ matrix.template }}/.dev-platform
+          persist-credentials: false
+      - name: Start devcontainer
+        shell: bash
+        run: npx --yes "$DEVCONTAINER_CLI" up --workspace-folder "$DEST"
+      - name: Verify inside the devcontainer
+        shell: bash
+        run: npx --yes "$DEVCONTAINER_CLI" exec --workspace-folder "$DEST" bash -lc "uv run --project .dev-platform/cli devctl verify --profile $TEMPLATE"
+
+  security:
+    name: security
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+      issues: write
+    uses: ./.github/workflows/security.yml
+    with:
+      upload-sarif: true
+    secrets:
+      copilot_assign_token: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
+
+  workflow-lint:
+    name: workflow-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Audit workflows with zizmor
+        shell: bash
+        run: uvx zizmor==1.31.1 --format plain --min-severity high --no-progress .github/workflows actions
+      - name: Lint workflows with actionlint
+        shell: bash
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/repo" -w /repo rhysd/actionlint:1.7.7
+
+  notify:
+    name: notify
+    needs: [cli, templates, template-unity, devcontainer, security, workflow-lint]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    env:
+      COPILOT_ASSIGN_TOKEN: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Open or update failure issue
+        uses: ./actions/notify
+        with:
+          status: self-test job failed
+          title: "CI failure: ${{ github.workflow }}"
+          label: ci-alert
