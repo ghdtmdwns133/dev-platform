@@ -134,14 +134,22 @@ def trx_counts(path: Path) -> dict[str, int]:
         root = ET.parse(path).getroot()
     except (OSError, ET.ParseError):
         return {"passed": 0, "failed": 0, "skipped": 0}
-    for counters in root.iter("Counters"):
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue
+        if element.tag.rsplit("}", 1)[-1] != "Counters":
+            continue
         try:
-            passed = int(counters.get("passed", "0"))
-            failed = int(counters.get("failed", "0"))
-            skipped = int(counters.get("notExecuted", "0")) + int(counters.get("inconclusive", "0"))
+            total = int(element.get("total", "0"))
+            passed = int(element.get("passed", "0"))
+            failed = int(element.get("failed", "0"))
         except ValueError:
             continue
-        return {"passed": passed, "failed": failed, "skipped": skipped}
+        return {
+            "passed": passed,
+            "failed": failed,
+            "skipped": max(total - passed - failed, 0),
+        }
     return {"passed": 0, "failed": 0, "skipped": 0}
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from support import (
     FakeRunner,
     make_unity_tree,
@@ -13,7 +14,7 @@ from support import (
     write_text,
 )
 
-from devplatform import procs, unity, verify
+from devplatform import procs, report, unity, verify
 from devplatform.config import load_config
 from devplatform.errors import DevctlError
 
@@ -40,7 +41,7 @@ def test_python_plan_argv(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     config = config_for(root, "python")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
     steps = verify.plan("python", root, reports, config, 85)
     assert [step.name for step in steps] == [
         "uv-sync",
@@ -89,7 +90,7 @@ def test_dotnet_plan_argv(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     config = config_for(root, "dotnet")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
     steps = verify.plan("dotnet", root, reports, config, 60)
     assert [step.name for step in steps] == [
         "dotnet-restore",
@@ -111,7 +112,7 @@ def test_unity_plans(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     config = config_for(root, "unity")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
     steps = verify.plan("unity", root, reports, config, 50)
     assert [step.name for step in steps] == [
         "unity-integrity",
@@ -144,7 +145,7 @@ def test_python_success_writes_summary(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     config = config_for(root, "python")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
     runner = FakeRunner(
         on_run=lambda name, argv, cwd: write_coverage_artifacts(name, argv, root, reports, "python")
     )
@@ -171,7 +172,7 @@ def test_python_failure_aggregation(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     config = config_for(root, "python")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
     runner = FakeRunner({"ruff-check": 1, "pytest": 1})
     code = verify.run_verify("python", root, reports, config, PLATFORM_HOME, 80, runner=runner)
     assert code == 1
@@ -186,7 +187,7 @@ def test_fail_fast_skips_remaining(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     config = config_for(root, "python")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
     runner = FakeRunner({"ruff-check": 1})
     code = verify.run_verify(
         "python", root, reports, config, PLATFORM_HOME, 0, fail_fast=True, runner=runner
@@ -205,7 +206,7 @@ def test_missing_coverage_report_is_execution_error(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     config = config_for(root, "python")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
     code = verify.run_verify("python", root, reports, config, PLATFORM_HOME, 0, runner=FakeRunner())
     assert code == 3
     summary = json.loads((reports / "python/summary.json").read_text(encoding="utf-8"))
@@ -218,7 +219,7 @@ def test_coverage_below_minimum_fails(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     config = config_for(root, "python")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
 
     def low(name, argv, cwd):
         if name == "pytest":
@@ -239,7 +240,7 @@ def test_typescript_success(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     config = config_for(root, "typescript")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
     runner = FakeRunner(
         on_run=lambda name, argv, cwd: write_coverage_artifacts(
             name, argv, root, reports, "typescript"
@@ -256,7 +257,7 @@ def test_dotnet_success(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     config = config_for(root, "dotnet")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
     runner = FakeRunner(
         on_run=lambda name, argv, cwd: write_coverage_artifacts(name, argv, root, reports, "dotnet")
     )
@@ -264,24 +265,25 @@ def test_dotnet_success(tmp_path: Path) -> None:
     assert code == 0
     summary = json.loads((reports / "dotnet/summary.json").read_text(encoding="utf-8"))
     assert summary["coverage"]["line"] == 88.0
-    assert summary["tests"] == {"passed": 4, "failed": 0, "skipped": 0, "flaky": []}
+    assert summary["tests"] == {"passed": 4, "failed": 1, "skipped": 1, "flaky": []}
 
 
 def test_unity_verify_with_mocked_editor(tmp_path: Path, monkeypatch) -> None:
     root = make_unity_tree(tmp_path / "project")
     config = config_for(root, "unity")
-    reports = tmp_path / "reports"
-    write_text(
-        reports / "unity/coverage/Report/Summary.xml",
-        "<CoverageReport><Summary><Coveredlines>45</Coveredlines>"
-        "<Coverablelines>50</Coverablelines></Summary></CoverageReport>",
-    )
+    reports = root / "artifacts/reports"
 
     monkeypatch.setattr(unity, "require_editor", lambda config, root: Path("Unity.exe"))
     monkeypatch.setattr(unity, "check_editor_version", lambda config, editor: None)
     monkeypatch.setattr(unity, "handle_lock", lambda root: False)
 
     def fake_run_tests(root, reports, config, platform, editor, runner=None, profile="unity"):
+        if platform == "PlayMode":
+            write_text(
+                reports / "unity/coverage/Report/Summary.xml",
+                "<CoverageReport><Summary><Coveredlines>45</Coveredlines>"
+                "<Coverablelines>50</Coverablelines></Summary></CoverageReport>",
+            )
         return unity.UnityStep(
             f"unity-{platform.lower()}",
             procs.STATUS_PASSED,
@@ -314,7 +316,7 @@ def test_unity_verify_with_mocked_editor(tmp_path: Path, monkeypatch) -> None:
 def test_unity_editor_missing_is_precondition(tmp_path: Path, monkeypatch) -> None:
     root = make_unity_tree(tmp_path / "project")
     config = config_for(root, "unity")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
 
     def missing(config, root):
         raise DevctlError(2, "Unity 6000.5.1f1 editor not found; set unity.editorPath")
@@ -340,11 +342,176 @@ def test_aggregate_exit_precedence() -> None:
     assert verify.aggregate_exit([outcome("skipped", 0)]) == 0
 
 
+def test_trx_counts_namespaced(tmp_path: Path) -> None:
+    path = tmp_path / "test.trx"
+    write_text(
+        path,
+        '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">'
+        '<ResultSummary><Counters total="10" passed="7" failed="2" notExecuted="1" />'
+        "</ResultSummary></TestRun>",
+    )
+    assert report.trx_counts(path) == {"passed": 7, "failed": 2, "skipped": 1}
+
+
+def test_verify_clears_previous_reports(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    config = config_for(root, "python")
+    reports = root / "artifacts/reports"
+    stale_coverage = reports / "python/coverage.xml"
+    write_text(stale_coverage, '<coverage line-rate="0.99"></coverage>')
+    write_text(reports / "python/junit.xml", "<testsuite tests='99' />")
+    code = verify.run_verify("python", root, reports, config, PLATFORM_HOME, 0, runner=FakeRunner())
+    assert code == 3
+    assert not stale_coverage.exists()
+    summary = json.loads((reports / "python/summary.json").read_text(encoding="utf-8"))
+    coverage_step = next(item for item in summary["steps"] if item["name"] == "coverage")
+    assert coverage_step["status"] == "error"
+    assert summary["coverage"]["line"] is None
+    assert summary["tests"]["passed"] == 0
+
+
+def test_verify_refuses_reports_outside_root(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    config = config_for(root, "python")
+    with pytest.raises(DevctlError) as excinfo:
+        verify.run_verify(
+            "python",
+            root,
+            tmp_path / "external-reports",
+            config,
+            PLATFORM_HOME,
+            0,
+            runner=FakeRunner(),
+        )
+    assert excinfo.value.code == 2
+    assert "outside root" in excinfo.value.message
+
+
+def test_python_prerequisites_skip_downstream(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    config = config_for(root, "python")
+    reports = root / "artifacts/reports"
+    runner = FakeRunner({"uv-sync": 1})
+    code = verify.run_verify("python", root, reports, config, PLATFORM_HOME, 0, runner=runner)
+    assert code == 1
+    summary = json.loads((reports / "python/summary.json").read_text(encoding="utf-8"))
+    steps = {item["name"]: item for item in summary["steps"]}
+    assert steps["uv-sync"]["status"] == "failed"
+    for name in ("ruff-check", "ruff-format", "pytest"):
+        assert steps[name]["status"] == "skipped"
+        assert steps[name]["detail"] == "prerequisite uv-sync failed"
+    assert steps["coverage"]["status"] == "skipped"
+    assert steps["coverage"]["detail"] == "prerequisite pytest failed"
+    assert [call["name"] for call in runner.calls] == ["uv-sync"]
+
+
+def test_dotnet_prerequisites_skip_stale_test_and_coverage(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    config = config_for(root, "dotnet")
+    reports = root / "artifacts/reports"
+    runner = FakeRunner({"dotnet-build": 1})
+    code = verify.run_verify("dotnet", root, reports, config, PLATFORM_HOME, 0, runner=runner)
+    assert code == 1
+    summary = json.loads((reports / "dotnet/summary.json").read_text(encoding="utf-8"))
+    steps = {item["name"]: item for item in summary["steps"]}
+    assert steps["dotnet-restore"]["status"] == "passed"
+    assert steps["dotnet-build"]["status"] == "failed"
+    assert steps["dotnet-format"]["status"] == "passed"
+    assert steps["dotnet-test"]["status"] == "skipped"
+    assert steps["dotnet-test"]["detail"] == "prerequisite dotnet-build failed"
+    assert steps["coverage"]["status"] == "skipped"
+    assert steps["coverage"]["detail"] == "prerequisite dotnet-test failed"
+    assert summary["tests"] == {"passed": 0, "failed": 0, "skipped": 0, "flaky": []}
+    assert [call["name"] for call in runner.calls] == [
+        "dotnet-restore",
+        "dotnet-build",
+        "dotnet-format",
+    ]
+
+
+def test_typescript_prerequisites_skip_downstream(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    config = config_for(root, "typescript")
+    reports = root / "artifacts/reports"
+    code = verify.run_verify(
+        "typescript",
+        root,
+        reports,
+        config,
+        PLATFORM_HOME,
+        0,
+        runner=FakeRunner({"npm-ci": 1}),
+    )
+    assert code == 1
+    summary = json.loads((reports / "typescript/summary.json").read_text(encoding="utf-8"))
+    steps = {item["name"]: item for item in summary["steps"]}
+    assert steps["npm-ci"]["status"] == "failed"
+    for name in ("tsc", "eslint", "prettier", "vitest"):
+        assert steps[name]["status"] == "skipped"
+        assert steps[name]["detail"] == "prerequisite npm-ci failed"
+    assert steps["coverage"]["detail"] == "prerequisite vitest failed"
+
+
+def test_unity_integrity_does_not_block_tests_but_editmode_blocks_coverage(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = make_unity_tree(tmp_path / "project")
+    scene = root / "Assets/Scenes/SampleScene.unity"
+    scene.write_text(
+        scene.read_text(encoding="utf-8").replace("m_Name: Main Camera", "m_Name: Renamed"),
+        encoding="utf-8",
+    )
+    config = config_for(root, "unity")
+    reports = root / "artifacts/reports"
+
+    monkeypatch.setattr(unity, "require_editor", lambda config, root: Path("Unity.exe"))
+    monkeypatch.setattr(unity, "check_editor_version", lambda config, editor: None)
+    monkeypatch.setattr(unity, "handle_lock", lambda root: False)
+    calls: list[str] = []
+
+    def fake_run_tests(root, reports, config, platform, editor, runner=None, profile="unity"):
+        calls.append(platform)
+        if platform == "EditMode":
+            return unity.UnityStep(
+                "unity-editmode",
+                procs.STATUS_FAILED,
+                1,
+                None,
+                "1 failed",
+                {"passed": 1, "failed": 1, "skipped": 0},
+            )
+        return unity.UnityStep(
+            "unity-playmode",
+            procs.STATUS_PASSED,
+            0,
+            None,
+            "passed",
+            {"passed": 5, "failed": 0, "skipped": 0},
+        )
+
+    monkeypatch.setattr(unity, "run_tests", fake_run_tests)
+    code = verify.run_verify("unity", root, reports, config, PLATFORM_HOME, 0)
+    assert code == 1
+    assert calls == ["EditMode", "PlayMode"]
+    summary = json.loads((reports / "unity/summary.json").read_text(encoding="utf-8"))
+    steps = {item["name"]: item for item in summary["steps"]}
+    assert steps["unity-integrity"]["status"] == "failed"
+    assert steps["unity-editmode"]["status"] == "failed"
+    assert steps["unity-playmode"]["status"] == "passed"
+    assert steps["unity-coverage"]["status"] == "skipped"
+    assert steps["unity-coverage"]["detail"] == "prerequisite unity-editmode failed"
+
+
 def test_summary_markdown_contains_table(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     root.mkdir()
     config = config_for(root, "python")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
     runner = FakeRunner(
         on_run=lambda name, argv, cwd: write_coverage_artifacts(name, argv, root, reports, "python")
     )

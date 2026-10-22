@@ -9,6 +9,7 @@ aggregates failures (all steps run by default), and writes ``summary.json`` /
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -18,14 +19,36 @@ from typing import Any
 
 from . import integrity, procs, report, unity
 from .config import Config
-from .errors import EXIT_EXECUTION, EXIT_GATE, DevctlError
+from .errors import EXIT_EXECUTION, EXIT_GATE, EXIT_PRECONDITION, DevctlError
 
 Runner = Callable[..., procs.Result]
 
-COVERAGE_PRODUCERS = {
-    "python": "pytest",
-    "typescript": "vitest",
-    "dotnet": "dotnet-test",
+#: A step whose prerequisite did not pass is skipped (not failed).  Only names
+#: present in the profile's plan are used, so a profile that omits e.g. EditMode
+#: does not get an unsatisfiable coverage prerequisite.
+PREREQUISITES: dict[str, dict[str, list[str]]] = {
+    "python": {
+        "ruff-check": ["uv-sync"],
+        "ruff-format": ["uv-sync"],
+        "pytest": ["uv-sync"],
+        "coverage": ["pytest"],
+    },
+    "typescript": {
+        "tsc": ["npm-ci"],
+        "eslint": ["npm-ci"],
+        "prettier": ["npm-ci"],
+        "vitest": ["npm-ci"],
+        "coverage": ["vitest"],
+    },
+    "dotnet": {
+        "dotnet-build": ["dotnet-restore"],
+        "dotnet-format": ["dotnet-restore"],
+        "dotnet-test": ["dotnet-build"],
+        "coverage": ["dotnet-test"],
+    },
+    "unity": {
+        "unity-coverage": ["unity-editmode"],
+    },
 }
 
 
@@ -36,6 +59,7 @@ class Step:
     argv: list[str] = field(default_factory=list)
     platform: str | None = None
     coverage_kind: str | None = None
+    prereq: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -162,7 +186,10 @@ def plan(
     else:  # pragma: no cover - argparse restricts profiles
         raise DevctlError(EXIT_EXECUTION, f"unknown profile: {profile}")
 
+    names = {step.name for step in steps}
+    mapping = PREREQUISITES.get(profile, {})
     for step in steps:
+        step.prereq = [name for name in mapping.get(step.name, []) if name in names]
         if step.kind == "run":
             step.argv = [str(item) for item in step.argv]
     return steps
@@ -228,6 +255,29 @@ def _run_test_counts(profile: str, root: Path, reports_dir: Path) -> dict[str, i
     return counts
 
 
+def _clear_profile_reports(reports_dir: Path, profile: str, root: Path) -> None:
+    """Delete only ``<reports>/<profile>`` before a run.
+
+    Refuses (exit 2) when the target is a symlink, resolves outside the repository
+    root, or is the root itself.  Clearing prevents a failed build from reusing
+    stale binaries/coverage/test results from a previous run.
+    """
+    profile_dir = Path(reports_dir) / profile
+    root_resolved = Path(root).resolve()
+    if profile_dir.is_symlink():
+        raise DevctlError(
+            EXIT_PRECONDITION, f"refusing to clear symlinked reports directory: {profile_dir}"
+        )
+    target = profile_dir.resolve()
+    if target == root_resolved or not target.is_relative_to(root_resolved):
+        raise DevctlError(
+            EXIT_PRECONDITION, f"refusing to clear reports directory outside root: {profile_dir}"
+        )
+    if target.exists():
+        shutil.rmtree(target)
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
+
 def run_verify(
     profile: str,
     root: Path,
@@ -241,7 +291,8 @@ def run_verify(
     runner: Runner = procs.run,
 ) -> int:
     root = Path(root)
-    reports_dir = Path(reports_dir)
+    reports_dir = Path(reports_dir).resolve()
+    _clear_profile_reports(reports_dir, profile, root)
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
     started = time.monotonic()
     steps = plan(profile, root, reports_dir, config, min_coverage, unity_build, upload_coverage)
@@ -254,6 +305,7 @@ def run_verify(
     tests: dict[str, Any] = {"passed": 0, "failed": 0, "skipped": 0, "flaky": []}
     aborted = False
     editor: Path | None = None
+    status_by_name: dict[str, str] = {}
 
     def ensure_editor() -> Path:
         nonlocal editor
@@ -271,17 +323,28 @@ def run_verify(
     for step in steps:
         log = _reports_step(reports_dir, profile, step.name)
         if aborted:
-            outcomes.append(
-                _record(
-                    step,
-                    procs.STATUS_SKIPPED,
-                    0,
-                    0.0,
-                    log,
-                    root,
-                    "skipped after failure (--fail-fast)",
-                )
+            outcome = _record(
+                step,
+                procs.STATUS_SKIPPED,
+                0,
+                0.0,
+                log,
+                root,
+                "skipped after failure (--fail-fast)",
             )
+            outcomes.append(outcome)
+            status_by_name[outcome.name] = outcome.status
+            continue
+        blocker = next(
+            (name for name in step.prereq if status_by_name.get(name) != procs.STATUS_PASSED),
+            None,
+        )
+        if blocker is not None:
+            detail = f"prerequisite {blocker} failed"
+            _write_log(log, [detail])
+            outcome = _record(step, procs.STATUS_SKIPPED, 0, 0.0, log, root, detail)
+            outcomes.append(outcome)
+            status_by_name[outcome.name] = outcome.status
             continue
         step_started = time.monotonic()
         try:
@@ -371,21 +434,6 @@ def run_verify(
                         _coverage_detail(profile, measured["line"], min_coverage),
                     )
             elif step.kind == "coverage":
-                producer = COVERAGE_PRODUCERS.get(step.coverage_kind or "")
-                producer_outcome = next((item for item in outcomes if item.name == producer), None)
-                if producer_outcome is not None and producer_outcome.status != procs.STATUS_PASSED:
-                    outcome = _record(
-                        step,
-                        procs.STATUS_SKIPPED,
-                        0,
-                        time.monotonic() - step_started,
-                        log,
-                        root,
-                        f"{producer} did not pass",
-                    )
-                    outcomes.append(outcome)
-                    mark_failure()
-                    continue
                 value, path = _coverage_value(profile, root, reports_dir, step.coverage_kind or "")
                 if value is None:
                     message = f"coverage report missing for {profile}"
@@ -477,6 +525,7 @@ def run_verify(
             procs.emit_error(message, title=step.name)
 
         outcomes.append(outcome)
+        status_by_name[outcome.name] = outcome.status
         if outcome.status in {procs.STATUS_FAILED, procs.STATUS_ERROR}:
             mark_failure()
 

@@ -167,8 +167,8 @@ def write_coverage_artifacts(
     elif name == "dotnet-test":
         write_text(
             profile_dir / "test.trx",
-            '<TestRun><ResultSummary><Counters total="4" passed="4" failed="0" '
-            'notExecuted="0" inconclusive="0"/></ResultSummary></TestRun>',
+            '<TestRun><ResultSummary><Counters total="6" passed="4" failed="1" '
+            'notExecuted="1" inconclusive="0"/></ResultSummary></TestRun>',
         )
         write_text(
             profile_dir / "abc123/coverage.cobertura.xml",

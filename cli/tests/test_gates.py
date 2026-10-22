@@ -30,7 +30,8 @@ def test_python_bad_fixture_files() -> None:
 
 
 def test_python_bad_gate_via_subprocess(tmp_path: Path, monkeypatch, capsys) -> None:
-    fixture = FIXTURES / "python-bad"
+    root = tmp_path / "repo"
+    shutil.copytree(FIXTURES / "python-bad", root)
     config_path = tmp_path / "python.json"
     config_path.write_text(
         json.dumps(
@@ -44,12 +45,12 @@ def test_python_bad_gate_via_subprocess(tmp_path: Path, monkeypatch, capsys) -> 
     stub = install_uv_stub(tmp_path / "stubs")
     monkeypatch.setenv("PATH", str(stub.parent) + os.pathsep + os.environ["PATH"])
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
 
     code = cli.main(
         [
             "--root",
-            str(fixture),
+            str(root),
             "--config",
             str(config_path),
             "--reports",
@@ -84,7 +85,7 @@ def test_typescript_bad_gate(tmp_path: Path) -> None:
     )
     write_config(root, profile="typescript")
     config = load_config(root, cli_profile="typescript")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
 
     steps = verify.plan("typescript", root, reports, config, 0)
     names = [step.name for step in steps]
@@ -108,7 +109,7 @@ def test_dotnet_bad_gate(tmp_path: Path) -> None:
     assert "TreatWarningsAsErrors" in (root / "Directory.Build.props").read_text(encoding="utf-8")
     write_config(root, profile="dotnet")
     config = load_config(root, cli_profile="dotnet")
-    reports = tmp_path / "reports"
+    reports = root / "artifacts/reports"
 
     steps = verify.plan("dotnet", root, reports, config, 0)
     build_argv = next(step.argv for step in steps if step.name == "dotnet-build")
@@ -126,7 +127,8 @@ def test_dotnet_bad_gate(tmp_path: Path) -> None:
 
 
 def test_annotations_only_in_ci(tmp_path: Path, monkeypatch, capsys) -> None:
-    fixture = FIXTURES / "python-bad"
+    root = tmp_path / "repo"
+    shutil.copytree(FIXTURES / "python-bad", root)
     config_path = tmp_path / "python.json"
     config_path.write_text(json.dumps({"profile": "python"}), encoding="utf-8")
     stub = install_uv_stub(tmp_path / "stubs")
@@ -135,11 +137,11 @@ def test_annotations_only_in_ci(tmp_path: Path, monkeypatch, capsys) -> None:
     code = cli.main(
         [
             "--root",
-            str(fixture),
+            str(root),
             "--config",
             str(config_path),
             "--reports",
-            str(tmp_path / "reports"),
+            str(root / "artifacts/reports"),
             "verify",
             "--profile",
             "python",

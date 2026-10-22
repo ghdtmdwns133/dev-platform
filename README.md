@@ -4,6 +4,11 @@ Reusable verification platform for Unity, .NET, Python and TypeScript
 repositories. One command, `devctl`, runs the same steps locally and in GitHub
 Actions, with the same arguments and the same report layout.
 
+## Start here
+
+- [docs/MANUAL.ko.md](docs/MANUAL.ko.md) — 매일 쓰는 절차: commit, push, Unity 러너, 릴리스, 장애 대응.
+- [docs/MAINTAINING.ko.md](docs/MAINTAINING.ko.md) — 구조, 태그 운영, 도구 업데이트, 새 스택·저장소 추가.
+
 ## What it provides
 
 - `devctl` — Python 3.12 CLI (stdlib only, run through `uv`) with profiles for
