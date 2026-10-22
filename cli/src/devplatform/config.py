@@ -50,6 +50,7 @@ DEFAULT_UNITY: dict[str, Any] = {
     "retryFailed": 1,
     "coverageAssemblyFilters": ["-*Tests*"],
     "buildOutput": "artifacts/unity-build/ProjectDelta.exe",
+    "cloudBuild": {"target": None, "timeoutMinutes": 90},
 }
 
 TOP_LEVEL_KEYS = {"profile", "reports", "coverage", "unity"}
@@ -135,6 +136,24 @@ def _validate_required_objects(value: Any) -> list[dict[str, Any]]:
     return result
 
 
+CLOUD_BUILD_KEYS = {"target", "timeoutMinutes"}
+
+
+def _validate_cloud_build(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise _error("unity.cloudBuild must be an object")
+    unknown = set(value) - CLOUD_BUILD_KEYS
+    if unknown:
+        raise _error(f"unknown key(s) in unity.cloudBuild: {sorted(unknown)}")
+    target = value.get("target")
+    if target is not None:
+        target = _expect_str(target, "unity.cloudBuild.target")
+    timeout = _expect_int(value.get("timeoutMinutes", 90), "unity.cloudBuild.timeoutMinutes")
+    if timeout < 1 or timeout > 1440:
+        raise _error("unity.cloudBuild.timeoutMinutes must be between 1 and 1440")
+    return {"target": target, "timeoutMinutes": timeout}
+
+
 def _validate_unity(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise _error("unity must be an object")
@@ -172,6 +191,7 @@ def _validate_unity(value: Any) -> dict[str, Any]:
     unity["retryFailed"] = _expect_int(unity["retryFailed"], "unity.retryFailed")
     if unity["retryFailed"] < 0:
         raise _error("unity.retryFailed must be zero or greater")
+    unity["cloudBuild"] = _validate_cloud_build(unity["cloudBuild"])
     return unity
 
 

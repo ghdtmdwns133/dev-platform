@@ -42,6 +42,21 @@ on:
         required: false
         default: v1
         type: string
+      unity-build-target:
+        description: Unity Build Automation build target id (empty uses unity.cloudBuild.target).
+        required: false
+        default: ""
+        type: string
+    secrets:
+      unity_build_api_key:
+        description: Unity Build Automation API key; enables the cloud build path.
+        required: false
+      unity_build_org_id:
+        description: Unity Cloud organization id.
+        required: false
+      unity_build_project_id:
+        description: Unity Cloud project id.
+        required: false
 
 permissions:
   contents: read
@@ -53,12 +68,13 @@ jobs:
     timeout-minutes: 10
     permissions:
       actions: write
+      checks: read
       contents: write
+      issues: write
       pull-requests: write
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
-      pr: ${{ steps.release.outputs.pr }}
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -84,56 +100,81 @@ jobs:
           token: ${{ github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-      - name: Label release PR for auto-merge
-        if: ${{ steps.release.outputs.pr != '' }}
+      - name: Label, auto-merge and dispatch CI for release PRs
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_JSON: ${{ steps.release.outputs.pr }}
-        run: |
-          set -euo pipefail
-          number=$(printf '%s' "$PR_JSON" | jq -r 'if type == "object" then .number else . end' 2>/dev/null || true)
-          case "$number" in
-            "" | null)
-              echo "::notice::release-please did not report a pull request number"
-              exit 0
-              ;;
-          esac
-          gh pr edit "$number" --add-label automerge
-          if ! gh pr merge --auto --squash "$number"; then
-            echo "::warning::Could not enable auto-merge for release PR #${number}"
-          fi
-      - name: Dispatch CI on the release branch
-        if: ${{ steps.release.outputs.pr != '' }}
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_JSON: ${{ steps.release.outputs.pr }}
+          GH_REPO: ${{ github.repository }}
           CI_WORKFLOW: ${{ inputs.ci-workflow }}
         run: |
           set -euo pipefail
-          branch=$(printf '%s' "$PR_JSON" | jq -r 'if type == "object" then .headBranchName // empty else empty end')
-          if [ -z "$branch" ]; then
-            number=$(printf '%s' "$PR_JSON" | jq -r 'if type == "number" then . else empty end')
-            if [ -n "$number" ]; then
-              branch=$(gh pr view "$number" --json headRefName --jq .headRefName --repo "$GITHUB_REPOSITORY")
-            fi
-          fi
-          if [ -z "$branch" ]; then
-            echo "::notice::release-please did not report a pull request branch"
+          gh label create automerge --color 0E8A16 \
+            --description "Auto-merge when required checks pass" --force
+          prs=$(gh pr list --label "autorelease: pending" --state open \
+            --json number,headRefName,headRefOid \
+            --jq '.[] | "\(.number)\t\(.headRefName)\t\(.headRefOid)"')
+          if [ -z "$prs" ]; then
+            echo "::notice::release-please has no open release pull request"
             exit 0
           fi
-          gh workflow run "$CI_WORKFLOW" --ref "$branch" --repo "$GITHUB_REPOSITORY"
+          while IFS=$'\t' read -r number branch sha; do
+            if [ -z "$number" ]; then
+              continue
+            fi
+            gh pr edit "$number" --add-label automerge
+            if ! gh pr merge --auto --squash "$number"; then
+              echo "::warning::Could not enable auto-merge for release PR #${number}"
+            fi
+            if [ -z "$branch" ] || [ -z "$sha" ]; then
+              echo "::warning::release PR #${number} has no head branch or SHA"
+              continue
+            fi
+            existing=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs" \
+              --jq '[.check_runs[].name | select(startswith("platform-verify"))] | length')
+            if [ "$existing" -gt 0 ]; then
+              echo "::notice::platform-verify already exists for ${sha}; skipping CI dispatch"
+              continue
+            fi
+            gh workflow run "$CI_WORKFLOW" --ref "$branch"
+          done <<< "$prs"
+
+  mode:
+    name: mode
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      uba: ${{ steps.detect.outputs.uba }}
+    steps:
+      - name: Detect Unity Build Automation credentials
+        id: detect
+        shell: bash
+        env:
+          UBA_API_KEY: ${{ secrets.unity_build_api_key }}
+          UBA_ORG_ID: ${{ secrets.unity_build_org_id }}
+          UBA_PROJECT_ID: ${{ secrets.unity_build_project_id }}
+        run: |
+          set -euo pipefail
+          if [ -n "$UBA_API_KEY" ] && [ -n "$UBA_ORG_ID" ] && [ -n "$UBA_PROJECT_ID" ]; then
+            echo "uba=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "uba=false" >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     name: build
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    needs: [release-please, mode]
+    if: ${{ needs.release-please.outputs.release_created == 'true' && (inputs.profile != 'unity' || needs.mode.outputs.uba != 'true') }}
     runs-on: ${{ fromJSON(inputs.runs-on) }}
     timeout-minutes: 60
     permissions:
       contents: read
     steps:
+      - name: Report self-hosted fallback
+        if: ${{ inputs.profile == 'unity' }}
+        shell: bash
+        run: echo "::notice::Unity Build Automation not configured; using self-hosted build"
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -197,10 +238,54 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  build-cloud:
+    name: build-cloud
+    needs: [release-please, mode]
+    if: ${{ needs.release-please.outputs.release_created == 'true' && inputs.profile == 'unity' && needs.mode.outputs.uba == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build with Unity Build Automation
+        uses: ghdtmdwns133/dev-platform/actions/unity-cloud-build@v1
+        with:
+          ref: ${{ inputs.platform-ref }}
+          api-key: ${{ secrets.unity_build_api_key }}
+          org-id: ${{ secrets.unity_build_org_id }}
+          project-id: ${{ secrets.unity_build_project_id }}
+          commit: ${{ github.sha }}
+          target: ${{ inputs.unity-build-target }}
+      - name: Package build
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_REF_NAME//\//-}"
+          shopt -s nullglob
+          files=(artifacts/reports/unity/cloud-build/*)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::Unity Build Automation produced no artifact"
+            exit 1
+          fi
+          mkdir -p artifacts
+          zip -j "artifacts/ProjectDelta-${ref}.zip" "${files[@]}"
+      - name: Upload release artifacts
+        if: ${{ inputs.artifact-path != '' && inputs.artifact-name != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.artifact-path }}
+          if-no-files-found: error
+          retention-days: 14
+
   publish:
     name: publish
-    needs: [release-please, build]
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    needs: [release-please, build, build-cloud]
+    if: ${{ always() && needs.release-please.result == 'success' && needs.release-please.outputs.release_created == 'true' && (needs.build.result == 'success' || needs.build-cloud.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

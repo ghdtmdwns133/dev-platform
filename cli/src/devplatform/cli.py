@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import hooks, initcmd, integrity, procs, report, unity, verify, versions
+from . import cloudbuild, hooks, initcmd, integrity, procs, report, unity, verify, versions
 from .config import PROFILES, load_config, reports_directory
 from .errors import EXIT_EXECUTION, DevctlError
 
@@ -66,6 +66,12 @@ def build_parser() -> argparse.ArgumentParser:
     junit_parser.add_argument("--out", dest="out_path", required=True)
 
     unity_sub.add_parser("coverage-upload", parents=[common])
+
+    cloud_parser = unity_sub.add_parser("cloud-build", parents=[common])
+    cloud_parser.add_argument("--target", default=None)
+    cloud_parser.add_argument("--commit", default=None)
+    cloud_parser.add_argument("--timeout-min", type=int, default=None)
+    cloud_parser.add_argument("--download", default=None)
 
     hooks_parser = sub.add_parser("hooks", parents=[common], help="git hook management")
     hooks_sub = hooks_parser.add_subparsers(dest="hooks_command", required=True)
@@ -162,6 +168,17 @@ def _dispatch(args: argparse.Namespace) -> int:
             result = unity.coverage_upload(root, reports, _platform_home(args), profile=profile)
             procs.emit_notice(result.detail or "coverage uploaded")
             return result.exit
+        if args.unity_command == "cloud-build":
+            cloudbuild.run_cloud_build(
+                root,
+                reports,
+                config,
+                target=args.target,
+                commit=args.commit,
+                timeout_min=args.timeout_min,
+                download=args.download,
+            )
+            return 0
         editor = unity.require_editor(config, root)
         unity.check_editor_version(config, editor)
         if args.unity_command == "tests":

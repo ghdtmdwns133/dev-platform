@@ -128,6 +128,30 @@ def test_coverage_bounds(tmp_path: Path) -> None:
         load_config(tmp_path)
 
 
+def test_cloud_build_config(tmp_path: Path) -> None:
+    config = load_config(tmp_path)
+    assert config.unity["cloudBuild"] == {"target": None, "timeoutMinutes": 90}
+
+    _write(
+        tmp_path,
+        {"profile": "unity", "unity": {"cloudBuild": {"target": "windows", "timeoutMinutes": 30}}},
+    )
+    config = load_config(tmp_path)
+    assert config.unity["cloudBuild"] == {"target": "windows", "timeoutMinutes": 30}
+
+    _write(tmp_path, {"profile": "unity", "unity": {"cloudBuild": {"target": 1}}})
+    with pytest.raises(DevctlError):
+        load_config(tmp_path)
+
+    _write(tmp_path, {"profile": "unity", "unity": {"cloudBuild": {"timeouts": 30}}})
+    with pytest.raises(DevctlError):
+        load_config(tmp_path)
+
+    _write(tmp_path, {"profile": "unity", "unity": {"cloudBuild": {"timeoutMinutes": 0}}})
+    with pytest.raises(DevctlError):
+        load_config(tmp_path)
+
+
 def test_playmode_mode_and_retry_config(tmp_path: Path) -> None:
     _write(tmp_path, {"profile": "unity"})
     config = load_config(tmp_path)

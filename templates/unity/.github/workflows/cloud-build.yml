@@ -1,0 +1,43 @@
+name: Cloud Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build (branch, tag or commit SHA).
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cloud-build:
+    name: platform-cloud-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Resolve commit
+        id: commit
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Build with Unity Build Automation
+        uses: __OWNER__/dev-platform/actions/unity-cloud-build@__PLATFORM_REF__
+        with:
+          ref: __PLATFORM_REF__
+          api-key: ${{ secrets.UNITY_BUILD_API_KEY }}
+          org-id: ${{ secrets.UNITY_BUILD_ORG_ID }}
+          project-id: ${{ secrets.UNITY_BUILD_PROJECT_ID }}
+          commit: ${{ steps.commit.outputs.sha }}

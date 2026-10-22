@@ -16,7 +16,9 @@ jobs:
     name: platform-release
     permissions:
       actions: write
+      checks: read
       contents: write
+      issues: write
       pull-requests: write
     uses: __OWNER__/dev-platform/.github/workflows/release.yml@__PLATFORM_REF__
     with:

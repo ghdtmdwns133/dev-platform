@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       unity-runner:
-        description: Where to run Unity (none, self-hosted or gameci).
+        description: Where to run Unity (none, self-hosted, gameci or uba).
         required: false
         default: none
         type: string
@@ -43,6 +43,11 @@ on:
         required: false
         default: v1
         type: string
+      cloud-build-target:
+        description: Unity Build Automation build target id (empty uses unity.cloudBuild.target).
+        required: false
+        default: ""
+        type: string
     secrets:
       UNITY_LICENSE:
         description: Unity license file contents.
@@ -52,6 +57,15 @@ on:
         required: false
       UNITY_PASSWORD:
         description: Unity account password.
+        required: false
+      UNITY_BUILD_API_KEY:
+        description: Unity Build Automation API key.
+        required: false
+      UNITY_BUILD_ORG_ID:
+        description: Unity Cloud organization id.
+        required: false
+      UNITY_BUILD_PROJECT_ID:
+        description: Unity Cloud project id.
         required: false
 
 permissions:
@@ -315,6 +329,30 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  cloud-build:
+    name: cloud-build
+    needs: changes
+    if: ${{ inputs.unity-runner == 'uba' && needs.changes.outputs.unity_changed == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build with Unity Build Automation
+        uses: ghdtmdwns133/dev-platform/actions/unity-cloud-build@v1
+        with:
+          ref: ${{ inputs.platform-ref }}
+          api-key: ${{ secrets.UNITY_BUILD_API_KEY }}
+          org-id: ${{ secrets.UNITY_BUILD_ORG_ID }}
+          project-id: ${{ secrets.UNITY_BUILD_PROJECT_ID }}
+          commit: ${{ github.sha }}
+          target: ${{ inputs.cloud-build-target }}
+          working-directory: ${{ inputs.project-path }}
+
   odin-gameci:
     name: odin-gameci
     needs: changes
@@ -365,7 +403,7 @@ jobs:
 
   notify:
     name: notify
-    needs: [changes, integrity, tests, tests-gameci, build, build-gameci, odin-gameci]
+    needs: [changes, integrity, tests, tests-gameci, build, build-gameci, cloud-build, odin-gameci]
     if: failure()
     runs-on: ubuntu-latest
     timeout-minutes: 5

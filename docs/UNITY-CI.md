@@ -24,6 +24,7 @@ grounds.
 | `none`       | Integrity only. The Unity jobs are skipped with a notice.                 |
 | `self-hosted`| Unity runs on the private repository's self-hosted Windows runner.        |
 | `gameci`     | GameCI test and build jobs run; requires a GameCI-supported license.     |
+| `uba`        | Unity Build Automation builds the commit on Unity-hosted Windows machines.|
 
 Integrity always runs on `ubuntu-latest` and never needs an editor. The
 `changes` job on Ubuntu compares the event's base and head commits and reports
@@ -70,6 +71,79 @@ it with `unity-runner: gameci` and provide `UNITY_LICENSE`, `UNITY_EMAIL` and
 `UNITY_PASSWORD`. If the `6000.5.1f1` image is unavailable, the job fails and
 the report marks Unity execution as blocked. The platform never sets GameCI as
 the default.
+
+## Unity Build Automation (UBA)
+
+Role split:
+
+- The self-hosted PC runner remains the primary Unity CI: EditMode and
+  PlayMode tests on every relevant push and nightly runs. It uses the student's
+  named-user license on the license holder's machine.
+- UBA is the auxiliary path. It produces the release player and can build on
+  demand while the PC is off. Unity operates the build machines, so the
+  student named-user license is not involved and no local editor is needed.
+
+The REST API is `https://build-api.cloud.unity3d.com/api/v1` (Build Automation
+API 2.0.0). Start a build with
+`POST /orgs/{orgid}/projects/{projectid}/buildtargets/{buildtargetid}/builds`
+and `{"commit": "<sha>"}`, poll `GET .../builds/{number}`, and download
+`links.download_primary` (a relative link returns `303` with the signed storage
+URL in the JSON body). Authentication is the API key in
+`Authorization: Bearer <key>`; older documentation describes the legacy
+`Authorization: Basic <key>` form, selectable with `UNITY_BUILD_API_AUTH=basic`.
+References:
+
+- <https://build-api.cloud.unity3d.com/docs/>
+- <https://docs.unity.com/en-us/build-automation/build-automation-api>
+- <https://docs.unity.com/en-us/build-automation/run-builds>
+
+Free tier: 200 Windows build minutes per month (Windows Micro), 100 Mac and
+100 Linux minutes, two concurrent machines, and 25 GB of DevOps storage. The
+minutes renew monthly. When the free minutes are exhausted, builds stop unless
+the organization has a payment method on file; there is no charge without a
+payment method. See
+<https://support.unity.com/hc/en-us/articles/34748492914964-Understanding-of-New-Unity-DevOps-Pricing-starting-from-Mar-1-2026>
+and
+<https://support.unity.com/hc/en-us/articles/6093104438932-How-does-the-pricing-for-Unity-Build-Automation-work>.
+
+One-time dashboard setup:
+
+1. At <https://cloud.unity.com/home/cloud-build>, open **DevOps > Build
+   Automation** and link the Unity Cloud project to the GitHub repository.
+2. Create a Windows build target for the release branch (for `project-delta`,
+   Unity `6000.5.1f1`, `StandaloneWindows64`).
+3. Copy the organization id (the org `coreForeignKey`/`orgFk`, not the display
+   name), the project id (the project `guid`) and the build target id.
+4. Copy the API key from **Build Automation Settings**.
+5. Store the values as Actions secrets `UNITY_BUILD_API_KEY`,
+   `UNITY_BUILD_ORG_ID` and `UNITY_BUILD_PROJECT_ID`, either through Doppler
+   (`<repo>/ci`) or with `gh secret set <NAME> -R ghdtmdwns133/<repo>`. Never
+   commit them.
+6. Optionally set `unity.cloudBuild.target` in `.devplatform/config.json`
+   (and `unity.cloudBuild.timeoutMinutes`, default 90) or pass
+   `cloud-build-target` to the reusable workflow.
+
+The CLI entry point is:
+
+```bash
+devctl unity cloud-build --commit <sha> [--target <id>] [--timeout-min 90] [--download DIR]
+```
+
+It reads the three `UNITY_BUILD_*` variables, polls every 30 seconds (backing
+off to five minutes and honouring `Retry-After` on `429`), writes
+`artifacts/reports/unity/cloud-build.json` and downloads the primary artifact
+to `artifacts/reports/unity/cloud-build/` by default. Exit codes: 0 success,
+1 build failure/cancelled, 2 missing target or credentials, 3 timeout or
+transport/download failure. `UNITY_BUILD_API_BASE` overrides the base URL for
+local tests; `UNITY_BUILD_POLL_SECONDS` overrides the poll interval.
+
+When the release workflow receives `unity_build_api_key`,
+`unity_build_org_id` and `unity_build_project_id`, a `build-cloud` job on
+`ubuntu-latest` supplies the release asset. Without all three secrets it prints
+`::notice::Unity Build Automation not configured; using self-hosted build` and
+runs the self-hosted build command. The Unity template also ships a
+`cloud-build.yml` caller: **Actions > Cloud Build > Run workflow** with a git
+ref starts an on-demand UBA build without the PC.
 
 ## Local verification
 
