@@ -37,6 +37,15 @@ on:
         required: false
         default: ci.yml
         type: string
+      merge-wait-minutes:
+        description: >-
+          Minutes the release job waits for the release PR to auto-merge before
+          creating the release in the same run. 0 disables waiting; the next push
+          or the daily schedule then creates the release. Use 0 on private repos
+          to avoid billed idle minutes.
+        required: false
+        default: 15
+        type: number
       platform-ref:
         description: dev-platform ref checked out for the CLI.
         required: false
@@ -220,10 +229,12 @@ jobs:
             gh workflow run "$CI_WORKFLOW" --ref "$branch"
           done <<< "$prs"
       - name: Wait for the release pull request to merge
+        if: ${{ inputs.merge-wait-minutes > 0 }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          WAIT_MINUTES: ${{ inputs.merge-wait-minutes }}
         run: |
           # shellcheck disable=SC2016 # $sha is a jq --arg, not a shell variable
           set -euo pipefail
@@ -256,7 +267,7 @@ jobs:
             done
           }
           approve_pending "$sha"
-          for attempt in $(seq 1 90); do
+          for attempt in $(seq 1 $((WAIT_MINUTES * 6))); do
             state=$(gh pr view "$number" --json state --jq .state)
             if [ "$state" = "MERGED" ]; then
               echo "::notice::release PR #${number} merged"
@@ -275,8 +286,8 @@ jobs:
             fi
             sleep 10
           done
-          echo "::error::release PR #${number} did not merge within 15 minutes"
-          exit 1
+          echo "::notice::release PR #${number} did not merge within ${WAIT_MINUTES} minutes; the next push or scheduled run creates the release"
+          exit 0
       - name: Check out the merged default branch
         if: ${{ steps.release-pr.outputs.release_created != 'true' }}
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
