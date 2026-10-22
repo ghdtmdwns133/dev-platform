@@ -34,7 +34,7 @@ flowchart LR
 
 ## 2. 핵심 원칙
 
-- **단일 검증 계약.** `verify.py`의 `plan()`이 프로필별 단계와 argv의 정본이다. 로컬과 CI는 `devctl verify --profile <p>`를 같은 인자로 실행한다. 단계 이름(`uv-sync`, `pytest`, `unity-integrity`, `coverage` 등)은 `summary.json`과 CI 로그의 계약이므로 이름을 바꾸면 소비자 문서와 테스트도 함께 고친다.
+- **단일 검증 계약.** `verify.py`의 `plan()`이 프로필별 단계와 argv의 정본이고, `PREREQUISITES`가 단계 의존성을 정한다. 로컬과 CI는 `devctl verify --profile <p>`를 같은 인자로 실행한다. `verify`는 시작할 때 `<reports>/<profile>/`를 비우고(`_clear_profile_reports`), 선행 단계가 실패하면 의존 단계를 `skipped`로 기록하며 `detail`에 `prerequisite <name> failed`를 남긴다. 단계 이름(`uv-sync`, `pytest`, `unity-integrity`, `coverage` 등)은 `summary.json`과 CI 로그의 계약이므로 이름을 바꾸면 소비자 문서와 테스트도 함께 고친다.
 - **버전 정본.** `versions.json`만 고치고 끝내지 않는다. 실제 실행에 쓰이는 값은 워크플로와 action에 하드코딩돼 있는 경우가 많다(4절 참조). `devctl versions --check`는 python 마이너 불일치, dotnet 프로필의 SDK 부재, unity 에디터가 있을 때의 정확한 버전 불일치, 핀보다 낮은 node 메이저를 실패로 보고, uv/npm/보안 도구는 경고로만 본다.
 - **SHA 고정.** 서드파티 action은 40자 SHA로 고정하고 뒤에 `# v4` 같은 태그 주석을 단다. `zizmor.yml`은 `ghdtmdwns133/*`만 태그 참조를 허용하고 나머지는 `hash-pin`을 요구한다. 새 action을 추가하면 SHA를 해석해 넣는다.
 
@@ -121,6 +121,7 @@ flowchart LR
 - `python-version: "3.12"`: `actions/setup-platform`, `actions/verify`, `actions/security-scan`, `actions/unity-cloud-build`, `.github/workflows/nightly.yml`, `release.yml`, `self-test.yml`, `unity.yml`
 - `node-version: "22"`: `actions/verify`, `release.yml`, `nightly.yml`, `self-test.yml`
 - devcontainer 이미지 태그: `templates/python/.devcontainer/devcontainer.json`, `templates/typescript/.devcontainer/devcontainer.json`, `templates/dotnet/.devcontainer/devcontainer.json`
+- TypeScript 템플릿의 `.prettierignore`는 `CHANGELOG.md`를 제외한다. release-please가 만드는 파일이 `prettier --check .`를 깨지 않게 하려는 것이므로, 새 스택 템플릿에도 같은 제외를 넣는다.
 - .NET: `templates/dotnet/global.json`, `templates/dotnet/Directory.Build.props`의 `TargetFramework`, `versions.json`의 `dotnet.sdk`·`targetFramework`
 
 ## 5. 새 스택 추가 (Go 예시)
@@ -143,11 +144,22 @@ Rust도 같은 순서다. 각 단계의 파일과 이름은 현재 소스 기준
 
 ## 6. 새 저장소에 붙이기
 
-템플릿으로 시작하려면 `devctl init --template <t> --name <n> --dest <path>`를 쓴다. 기존 저장소는 세 가지를 직접 넣는다.
+템플릿으로 시작하려면 `devctl init --template <t> --name <n> --dest <path>`를 쓴다. 기존 저장소는 네 가지를 직접 넣는다.
 
 1. `.devplatform/config.json` — `profile`은 필수, 나머지는 기본값이 있다. 알 수 없는 키는 오타로 간주해 exit 2로 거부한다.
-2. caller 워크플로 — `quality.yml` 또는 `unity.yml`과 `security.yml`을 부르고, 작업 이름을 `platform-verify`, `platform-security`로 고정한다. PR에서는 `needs`를 두지 않는다.
-3. 저장소 설정과 ruleset — 아래 명령을 실행한다.
+2. 루트 `zizmor.yml` — 소유자를 실제 값으로 넣는다. `devctl init`은 `templates/_shared/zizmor.yml`을 렌더링해 이 파일을 만든다.
+
+   ```yaml
+   rules:
+     unpinned-uses:
+       config:
+         policies:
+           "ghdtmdwns133/*": any
+           "*": hash-pin
+   ```
+
+3. caller 워크플로 — `quality.yml` 또는 `unity.yml`과 `security.yml`을 부르고, 작업 이름을 `platform-verify`, `platform-security`로 고정한다. PR에서는 `needs`를 두지 않는다.
+4. 저장소 설정과 ruleset — 아래 명령을 실행한다.
 
 ```bash
 gh api -X PATCH repos/ghdtmdwns133/<repo> -F allow_auto_merge=true -F delete_branch_on_merge=true
@@ -232,11 +244,13 @@ git rev-list -n 1 v1
 
 **체크 이름이 바뀌어 PR이 막힐 때.** 작업 이름을 바꿨다면 ruleset의 `required_status_checks`가 옛 이름을 가리킨다. 실제 이름을 다시 확인해 ruleset을 `PUT`으로 갱신한다.
 
+**릴리스가 예상 시점에 생기지 않을 때.** release 잡은 Release PR을 승인하고 `merge-wait-minutes`(기본 15)만큼만 기다린다. 초과하면 `::notice::`로 끝나므로 다음 `main` push나 매일 `23 4 * * *` schedule까지 기다린다. `merge-wait-minutes: 0`인 저장소는 이 대기를 아예 하지 않는다. release-please PR이 `main`과 충돌하면 `always-update: true`가 rebase하지만, 충돌이 계속되면 PR을 손으로 갱신한다.
+
 ## 9. 알려진 제약
 
 - **Unity 학생 라이선스.** 보유 라이선스는 named-user Student라 시리얼도 `.ulf`도 없다. GameCI v4가 지원하는 활성화 방식이 아니고, Unity Editor Software Terms §2.8은 서드파티가 클라우드/원격 서버에서 에디터를 실행하는 것을 금지한다. 그래서 GitHub 호스팅 러너에서 Unity를 돌리는 경로는 `unity-runner: gameci`로 구현만 되어 있고 기본값이 아니다.
 - **gitleaks 전체 히스토리.** `actions/security-scan`은 `gitleaks git .`을 `fetch-depth: 0` 체크아웃에서 실행한다. 과거 커밋의 비밀도 계속 잡히며, 비밀을 교체해도 히스토리에 남아 있으면 빨간색이 유지된다. 브랜치 삭제는 그 커밋이 기본 브랜치 히스토리에 없을 때만 효과가 있다.
-- **`GITHUB_TOKEN` PR.** `GITHUB_TOKEN`으로 만든 PR은 `pull_request` 워크플로를 트리거하지 않는다. release-please의 Release PR이 그렇기 때문에 `release.yml`이 `gh workflow run <ci-workflow> --ref <branch>`로 CI를 대신 dispatch한다. 이 우회는 caller에 `workflow_dispatch`가 있어야 동작한다.
+- **`GITHUB_TOKEN` PR.** `GITHUB_TOKEN`으로 만든 PR은 `pull_request` 워크플로를 트리거하지 않는다. release-please의 Release PR이 그렇기 때문에 `release.yml`이 `gh workflow run <ci-workflow> --ref <branch>`로 CI를 대신 dispatch한다. 그 실행은 `action_required`로 시작하므로 `actions: write`로 승인하고, 최대 `merge-wait-minutes` 동안 병합을 기다린 뒤 같은 실행에서 release-please를 다시 돌린다. `workflow_run`은 `GITHUB_TOKEN` 실행 뒤에 억제되므로 이 경로가 필요하다.
 - **docs-only push.** caller와 `self-test.yml`은 `paths-ignore: [docs/**, "**/*.md"]`라서 문서만 바꾸면 CI가 생기지 않는다. 필수 검사가 있는 저장소에서는 소유자 bypass로 병합하거나 코드 변경을 섞어야 한다.
 - **Windows 전용 Unity 실행.** `devctl`의 에디터 탐색은 `unity.editorPath`, `UNITY_EDITOR_PATH`, `C:/Program Files/Unity/Hub/Editor/<version>/Editor/Unity.exe` 순서다. PlayMode는 `unity.playmodeMode: "gui"`에서 창을 열고 입력을 주입하므로 데스크톱이 필요하다. `unity-assets`만 에디터 없이 어디서나 돈다.
 - **버전 검사의 강도.** `devctl versions --check`는 uv/npm/trivy/gitleaks/zizmor/actionlint 불일치를 경고로만 보고한다. 이 도구들의 실제 핀은 워크플로와 action에 있으므로 `versions.json`만 고쳐서는 CI 동작이 바뀌지 않는다.
