@@ -3,3 +3,4 @@ artifacts/
 coverage/
 dist/
 node_modules/
+CHANGELOG.md

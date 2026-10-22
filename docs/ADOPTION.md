@@ -209,6 +209,25 @@ The build job runs on `runs-on`, a JSON string of runner labels
 (default `'"ubuntu-latest"'`). Unity repositories can pass
 `'["self-hosted","windows","unity"]'` and use a PowerShell build command.
 
+### Completing a release without a human push
+
+The template callers also trigger on `workflow_run` for the `CI` workflow and on
+a daily schedule (`23 4 * * *`) as a backstop. The push run creates or updates
+the Release PR, labels it `automerge`, enables auto-merge and dispatches CI on
+the Release PR branch. When that CI run completes successfully, the
+`workflow_run` trigger runs the release workflow again. It merges the Release PR
+with `gh pr merge --squash --match-head-commit <sha>` (or observes that
+auto-merge already merged it), checks out the updated default branch and runs
+release-please again, so `release_created` becomes true in the same workflow
+run and the build/publish jobs attach the assets.
+
+Safety: the `workflow_run` job never checks out the upstream head branch and
+never executes code from it. It only calls `gh` APIs, merges a PR whose branch
+starts with `release-please--`, re-checks out the default branch and runs
+release-please. The inline `zizmor: ignore[dangerous-triggers]` comment in the
+caller documents this. Release-please is idempotent on existing tags, so a later
+schedule or human push cannot create a duplicate release.
+
 ## Failure issues
 
 On failure, the `notify` action creates an issue labeled `ci-alert` or comments
