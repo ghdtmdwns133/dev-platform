@@ -9,6 +9,12 @@ on:
   schedule:
     - cron: "23 4 * * *"
   workflow_dispatch:
+    inputs:
+      rebuild-tag:
+        description: Existing release tag to rebuild and re-attach assets for (empty = normal release flow)
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -29,6 +35,7 @@ jobs:
     uses: __OWNER__/dev-platform/.github/workflows/release.yml@__PLATFORM_REF__
     with:
       release-type: node
+      rebuild-tag: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild-tag || '' }}
       profile: typescript
       build-command: npm ci && npm run build && zip -r dist.zip dist
       artifact-path: dist.zip

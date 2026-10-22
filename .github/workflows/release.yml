@@ -46,6 +46,13 @@ on:
         required: false
         default: 15
         type: number
+      rebuild-tag:
+        description: >-
+          Existing release tag whose assets are rebuilt and re-attached (for a
+          failed release build). Empty runs the normal release-please flow.
+        required: false
+        default: ""
+        type: string
       platform-ref:
         description: dev-platform ref checked out for the CLI.
         required: false
@@ -83,8 +90,8 @@ jobs:
       issues: write
       pull-requests: write
     outputs:
-      release_created: ${{ steps.release-pr.outputs.release_created == 'true' && steps.release-pr.outputs.release_created || steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release-pr.outputs.release_created == 'true' && steps.release-pr.outputs.tag_name || steps.release.outputs.tag_name }}
+      release_created: ${{ inputs.rebuild-tag != '' && 'true' || (steps.release-pr.outputs.release_created == 'true' && steps.release-pr.outputs.release_created || steps.release.outputs.release_created) }}
+      tag_name: ${{ inputs.rebuild-tag != '' && inputs.rebuild-tag || (steps.release-pr.outputs.release_created == 'true' && steps.release-pr.outputs.tag_name || steps.release.outputs.tag_name) }}
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -103,6 +110,20 @@ jobs:
             echo "::error::release-please-config.json release-type '${configured}' does not match input '${RELEASE_TYPE}'"
             exit 1
           fi
+      - name: Confirm the release to rebuild
+        if: ${{ inputs.rebuild-tag != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ inputs.rebuild-tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG_NAME" --json tagName --jq .tagName >/dev/null || {
+            echo "::error::No GitHub release exists for tag ${TAG_NAME}"
+            exit 1
+          }
+          echo "::notice::Rebuilding and re-attaching assets for existing release ${TAG_NAME}"
       - name: Merge the release pull request after successful CI
         if: ${{ github.event_name == 'workflow_run' }}
         shell: bash
@@ -179,12 +200,14 @@ jobs:
           persist-credentials: false
       - name: Run release-please
         id: release-pr
+        if: ${{ inputs.rebuild-tag == '' }}
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           token: ${{ github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
       - name: Label, auto-merge and dispatch CI for release PRs
+        if: ${{ inputs.rebuild-tag == '' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -229,7 +252,7 @@ jobs:
             gh workflow run "$CI_WORKFLOW" --ref "$branch"
           done <<< "$prs"
       - name: Wait for the release pull request to merge
-        if: ${{ inputs.merge-wait-minutes > 0 }}
+        if: ${{ inputs.merge-wait-minutes > 0 && inputs.rebuild-tag == '' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -289,7 +312,7 @@ jobs:
           echo "::notice::release PR #${number} did not merge within ${WAIT_MINUTES} minutes; the next push or scheduled run creates the release"
           exit 0
       - name: Check out the merged default branch
-        if: ${{ steps.release-pr.outputs.release_created != 'true' }}
+        if: ${{ inputs.rebuild-tag == '' && steps.release-pr.outputs.release_created != 'true' }}
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.repository.default_branch }}
@@ -297,7 +320,7 @@ jobs:
           persist-credentials: false
       - name: Run release-please after merge
         id: release
-        if: ${{ steps.release-pr.outputs.release_created != 'true' }}
+        if: ${{ inputs.rebuild-tag == '' && steps.release-pr.outputs.release_created != 'true' }}
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           token: ${{ github.token }}
