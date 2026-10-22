@@ -211,15 +211,22 @@ The build job runs on `runs-on`, a JSON string of runner labels
 
 ### Completing a release without a human push
 
-The template callers also trigger on `workflow_run` for the `CI` workflow and on
-a daily schedule (`23 4 * * *`) as a backstop. The push run creates or updates
-the Release PR, labels it `automerge`, enables auto-merge and dispatches CI on
-the Release PR branch. When that CI run completes successfully, the
-`workflow_run` trigger runs the release workflow again. It merges the Release PR
-with `gh pr merge --squash --match-head-commit <sha>` (or observes that
-auto-merge already merged it), checks out the updated default branch and runs
-release-please again, so `release_created` becomes true in the same workflow
-run and the build/publish jobs attach the assets.
+The template callers also trigger on `workflow_run` for the `CI` workflow, a
+daily schedule (`23 4 * * *`) and `workflow_dispatch`. The push run creates or
+updates the Release PR, labels it `automerge`, enables auto-merge and dispatches
+CI on the Release PR branch. A Release PR created with `GITHUB_TOKEN` lands its
+pull-request CI run in `action_required`, so the release job approves that run
+(`actions: write`) and then waits up to 15 minutes for auto-merge to merge the
+PR. After the merge it checks out the updated default branch and runs
+release-please a second time, so `release_created` becomes true in the same
+workflow run and the build/publish jobs attach the assets.
+
+The `workflow_run` path remains for CI runs started by a trusted actor (for
+example a manual re-run): it merges the Release PR with `gh pr merge --squash
+--match-head-commit <sha>`, or observes that auto-merge already merged it, then
+runs release-please on the default branch. GitHub suppresses `workflow_run`
+after runs created by `GITHUB_TOKEN`, which is why the push run performs the
+approval and wait itself instead of relying on that trigger alone.
 
 Safety: the `workflow_run` job never checks out the upstream head branch and
 never executes code from it. It only calls `gh` APIs, merges a PR whose branch

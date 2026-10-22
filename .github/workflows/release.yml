@@ -66,7 +66,7 @@ jobs:
     name: release-please
     if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'release-please--')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
       actions: write
       checks: read
@@ -74,8 +74,8 @@ jobs:
       issues: write
       pull-requests: write
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      release_created: ${{ steps.release-pr.outputs.release_created == 'true' && steps.release-pr.outputs.release_created || steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release-pr.outputs.release_created == 'true' && steps.release-pr.outputs.tag_name || steps.release.outputs.tag_name }}
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -104,6 +104,7 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           CI_WORKFLOW: ${{ inputs.ci-workflow }}
         run: |
+          # shellcheck disable=SC2016 # $sha is a jq --arg, not a shell variable
           set -euo pipefail
           number=$(gh pr list --state all --head "$HEAD_BRANCH" --limit 1 --json number --jq '.[0].number // empty')
           if [ -z "$number" ]; then
@@ -125,6 +126,20 @@ jobs:
             gh workflow run "$CI_WORKFLOW" --ref "$HEAD_BRANCH"
             exit 0
           fi
+          approve_pending() {
+            ids=$(gh run list --branch "$HEAD_BRANCH" --event pull_request --limit 20 \
+              --json databaseId,conclusion,headSha \
+              --jq '.[] | select(.conclusion == "action_required") | "\(.databaseId) \(.headSha)"' \
+              | awk -v sha="$1" '$2 == sha {print $1}')
+            for id in $ids; do
+              if gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve" >/dev/null; then
+                echo "::notice::approved workflow run ${id}"
+              else
+                echo "::warning::could not approve workflow run ${id}"
+              fi
+            done
+          }
+          approve_pending "$HEAD_SHA"
           merged=false
           for _ in $(seq 1 12); do
             state=$(gh pr view "$number" --json state --jq .state)
@@ -154,7 +169,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Run release-please
-        id: release
+        id: release-pr
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           token: ${{ github.token }}
@@ -197,6 +212,72 @@ jobs:
             fi
             gh workflow run "$CI_WORKFLOW" --ref "$branch"
           done <<< "$prs"
+      - name: Wait for the release pull request to merge
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # shellcheck disable=SC2016 # $sha is a jq --arg, not a shell variable
+          set -euo pipefail
+          pr=$(gh pr list --label "autorelease: pending" --state open --limit 1 \
+            --json number,headRefName,headRefOid \
+            --jq '.[0] | "\(.number)\t\(.headRefName)\t\(.headRefOid)"')
+          if [ -z "$pr" ]; then
+            echo "::notice::no open release pull request to merge"
+            exit 0
+          fi
+          IFS=$'\t' read -r number branch sha <<< "$pr"
+          approve_pending() {
+            ids=$(gh run list --branch "$branch" --event pull_request --limit 20 \
+              --json databaseId,conclusion,headSha \
+              --jq '.[] | select(.conclusion == "action_required") | "\(.databaseId) \(.headSha)"' \
+              | awk -v sha="$1" '$2 == sha {print $1}')
+            for id in $ids; do
+              if gh api -X POST "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/approve" >/dev/null; then
+                echo "::notice::approved workflow run ${id}"
+              else
+                echo "::warning::could not approve workflow run ${id}"
+              fi
+            done
+          }
+          approve_pending "$sha"
+          for attempt in $(seq 1 90); do
+            state=$(gh pr view "$number" --json state --jq .state)
+            if [ "$state" = "MERGED" ]; then
+              echo "::notice::release PR #${number} merged"
+              exit 0
+            fi
+            if [ "$state" = "CLOSED" ]; then
+              echo "::error::release PR #${number} closed without merging"
+              exit 1
+            fi
+            current=$(gh pr view "$number" --json headRefOid --jq .headRefOid)
+            if [ "$current" != "$sha" ]; then
+              sha="$current"
+              approve_pending "$sha"
+            elif [ $((attempt % 6)) -eq 0 ]; then
+              approve_pending "$sha"
+            fi
+            sleep 10
+          done
+          echo "::error::release PR #${number} did not merge within 15 minutes"
+          exit 1
+      - name: Check out the merged default branch
+        if: ${{ steps.release-pr.outputs.release_created != 'true' }}
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run release-please after merge
+        id: release
+        if: ${{ steps.release-pr.outputs.release_created != 'true' }}
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+        with:
+          token: ${{ github.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
   mode:
     name: mode

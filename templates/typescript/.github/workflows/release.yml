@@ -8,6 +8,7 @@ on:
     types: [completed]
   schedule:
     - cron: "23 4 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
