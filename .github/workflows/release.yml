@@ -222,7 +222,7 @@ jobs:
           set -euo pipefail
           pr=$(gh pr list --label "autorelease: pending" --state open --limit 1 \
             --json number,headRefName,headRefOid \
-            --jq '.[0] | "\(.number)\t\(.headRefName)\t\(.headRefOid)"')
+            --jq '(.[0] // empty) | "\(.number)\t\(.headRefName)\t\(.headRefOid)"')
           if [ -z "$pr" ]; then
             echo "::notice::no open release pull request to merge"
             exit 0
