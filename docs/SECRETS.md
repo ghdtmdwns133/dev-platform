@@ -33,16 +33,21 @@ Doppler dependency.
 
 ## Secret list
 
-| Repository     | Secret                | Purpose                                             |
+| Repository / consumer | Secret | Purpose |
 | -------------- | --------------------- | --------------------------------------------------- |
-| `dev-flow-py`  | `CODECOV_TOKEN`       | Codecov upload.                                     |
-| `dev-flow-web` | `CODECOV_TOKEN`       | Codecov upload.                                     |
-| `dev-flow-web` | `SENTRY_AUTH_TOKEN`   | Source map upload and live event verification.      |
-| `dev-flow-web` | `SENTRY_ORG`          | Sentry organization slug.                           |
-| `dev-flow-web` | `SENTRY_PROJECT`      | Sentry project slug.                                |
-| `dev-flow-web` | `VITE_SENTRY_DSN`     | Browser DSN (public value, managed with the rest).  |
+| Any Codecov consumer | `CODECOV_TOKEN` | Codecov upload.                                  |
+| Any TypeScript consumer with Sentry | `SENTRY_AUTH_TOKEN` | Personal token with `event:read`, `project:read`, `project:releases`; source map upload and live event verification. |
+| Any TypeScript consumer with Sentry | `SENTRY_ORG` | Sentry organization slug.                     |
+| Any TypeScript consumer with Sentry | `SENTRY_PROJECT` | Sentry project slug.                      |
+| Any TypeScript consumer with Sentry | `VITE_SENTRY_DSN` | Browser DSN (public value, managed with the rest). |
 | `project-delta`| `CODECOV_TOKEN`       | Local Unity coverage upload.                        |
 | `dev-platform` | —                     | No service secrets.                                 |
+
+A consumer that uploads to Codecov needs only `CODECOV_TOKEN`. A TypeScript
+consumer that uses Sentry needs `SENTRY_AUTH_TOKEN` (a personal token with
+`event:read`, `project:read` and `project:releases`), `SENTRY_ORG`,
+`SENTRY_PROJECT` and `VITE_SENTRY_DSN`. These are not tied to a specific
+repository.
 
 `UNITY_LICENSE`, `UNITY_EMAIL` and `UNITY_PASSWORD` exist only for the GameCI
 runner mode. The Student named-user license cannot be activated through GameCI,

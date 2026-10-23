@@ -52,7 +52,7 @@ gh pr checks <pr-number>
 
 | 저장소 | 필수 검사 |
 | --- | --- |
-| `dev-flow-py`, `dev-flow-web` | `platform-verify / verify`, `platform-security / scan` |
+| `<새 저장소>` | `platform-verify / verify`, `platform-security / scan` |
 | `project-delta` | `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan` |
 | `dev-platform` | `cli`, `templates (python)`, `templates (typescript)`, `templates (dotnet)`, `templates (unity)`, `workflow-lint`, `security / scan` |
 
@@ -164,7 +164,7 @@ release-please는 커밋 메시지로 버전을 정한다.
 4. 병합되면 기본 브랜치를 다시 checkout해 release-please를 한 번 더 실행한다. 같은 실행에서 `release_created`가 true가 되고, build 작업이 태그(`tag_name`)를 checkout해 자산을 만든 뒤 publish가 릴리스에 붙인다.
 5. 대기 시간을 넘기면 `::notice::`만 남기고 성공으로 끝난다. 릴리스는 다음 push나 다음 schedule에서 만들어진다. `merge-wait-minutes: 0`은 대기를 끄며, `project-delta`는 private 저장소의 유료 대기 시간을 피하려고 0을 쓴다. `workflow_run`(CI completed) 트리거도 남아 있어, 신뢰된 액터가 시작한 CI 재실행에서는 Release PR을 직접 병합한다.
 
-자산은 `dev-flow-py`가 wheel/sdist, `dev-flow-web`이 `dist.zip`, `project-delta`가 빌드 명령이 만드는 `ProjectDelta.zip`이다.
+자산은 소비 저장소의 `release.yml` 설정을 따른다. 예를 들어 Python 소비 저장소는 wheel/sdist, TypeScript 소비 저장소는 `dist.zip`이고, `project-delta`는 빌드 명령이 만드는 `ProjectDelta.zip`이다.
 
 ### 5.3 Unity 빌드 자산의 출처
 

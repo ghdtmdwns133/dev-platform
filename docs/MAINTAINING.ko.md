@@ -7,9 +7,10 @@
 | 저장소 | 역할 |
 | --- | --- |
 | `ghdtmdwns133/dev-platform` | 재사용 워크플로, composite action, CLI, 템플릿, 문서의 정본. 소비 저장소는 `@v1`로 참조한다. |
-| `ghdtmdwns133/dev-flow-py` | Python 샘플. `quality.yml` + `security.yml`을 호출하고 릴리스는 wheel/sdist. |
-| `ghdtmdwns133/dev-flow-web` | TypeScript 샘플. Sentry 연동, 릴리스는 `dist.zip`. |
 | `ghdtmdwns133/project-delta` | private Unity 프로젝트. `unity.yml`을 self-hosted 러너로 호출한다. |
+| `<새 저장소>` | 새 소비 저장소. `devctl init`으로 템플릿을 렌더한 뒤 `quality.yml` + `security.yml`을 호출한다. |
+
+스택 범용성은 샘플 저장소가 삭제된 뒤에도 `self-test.yml`의 `templates (python|typescript|dotnet|unity)` 작업이 매 실행마다 각 템플릿을 렌더하고 `devctl verify`를 돌리므로 그대로 증명된다.
 
 `dev-platform` 디렉터리의 책임은 다음과 같다.
 
@@ -76,7 +77,7 @@ flowchart LR
 5. 소비 저장소를 다시 돌려 새 태그를 소비했는지 확인한다.
 
    ```bash
-   gh workflow run ci.yml -R ghdtmdwns133/dev-flow-py
+   gh workflow run ci.yml -R ghdtmdwns133/<repo>
    gh workflow run ci.yml -R ghdtmdwns133/project-delta
    gh run list -R ghdtmdwns133/project-delta -L 3
    ```

@@ -6,8 +6,8 @@ Student account analyzes private repositories.
 ## Setup
 
 1. Create the Student account at `https://codescene.io/student`.
-2. Install the GitHub App on the four repositories (`dev-platform`,
-   `dev-flow-py`, `dev-flow-web`, `project-delta`).
+2. Install the GitHub App on `dev-platform`, `project-delta`, and every other
+   repository that should get a status check.
 3. Create one CodeScene project per repository.
 4. Keep the default quality gate: the check fails when code health drops.
 
