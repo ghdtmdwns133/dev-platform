@@ -36,6 +36,14 @@ async function runMock() {
   console.log(`envelope received (${received})`);
 }
 
+// Sentry's API host follows the data-storage region encoded in the DSN host
+// (e.g. o1.ingest.de.sentry.io -> https://de.sentry.io).
+function sentryApiBase(dsn) {
+  const host = new URL(dsn).hostname;
+  const region = host.match(/\.ingest\.([a-z]{2})\.sentry\.io$/);
+  return region ? `https://${region[1]}.sentry.io` : "https://sentry.io";
+}
+
 async function runLive() {
   const dsn = process.env.SENTRY_DSN;
   const token = process.env.SENTRY_AUTH_TOKEN;
@@ -60,14 +68,21 @@ async function runLive() {
   if (!flushed) {
     fail("Sentry flush timed out");
   }
-  const response = await fetch(
-    `https://sentry.io/api/0/projects/${org}/${project}/events/${eventId}/`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    },
-  );
-  if (response.status !== 200) {
-    fail(`Sentry event lookup failed with status ${response.status}`);
+  // Events become queryable only after Sentry finishes processing them, so a
+  // 404 right after sending is expected; retry for up to ~2 minutes.
+  const apiBase = process.env.SENTRY_URL ?? sentryApiBase(dsn);
+  const url = `${apiBase}/api/0/projects/${org}/${project}/events/${eventId}/`;
+  let status = 0;
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    status = response.status;
+    if (status === 200 || status !== 404) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+  if (status !== 200) {
+    fail(`Sentry event lookup failed with status ${status}`);
   }
   console.log(`event id ${eventId}`);
 }
