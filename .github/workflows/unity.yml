@@ -49,6 +49,9 @@ on:
         default: ""
         type: string
     secrets:
+      codecov_token:
+        description: Codecov upload token for Unity coverage.
+        required: false
       UNITY_LICENSE:
         description: Unity license file contents.
         required: false
@@ -147,6 +150,8 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
+    env:
+      CODECOV_TOKEN: ${{ secrets.codecov_token }}
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -172,6 +177,14 @@ jobs:
         if: ${{ needs.changes.outputs.unity_changed == 'true' }}
         shell: pwsh
         run: uv run --project "$env:GITHUB_WORKSPACE/.dev-platform/cli" devctl verify --profile unity
+      - name: Upload Unity coverage to Codecov
+        if: ${{ needs.changes.outputs.unity_changed == 'true' && env.CODECOV_TOKEN != '' }}
+        shell: pwsh
+        run: uv run --project "$env:GITHUB_WORKSPACE/.dev-platform/cli" devctl unity coverage-upload
+      - name: Report missing Codecov token
+        if: ${{ needs.changes.outputs.unity_changed == 'true' && env.CODECOV_TOKEN == '' }}
+        shell: pwsh
+        run: Write-Host "::notice::Codecov skipped (no token)"
       - name: Run Odin validation
         if: ${{ needs.changes.outputs.unity_changed == 'true' && inputs.enable-odin }}
         shell: pwsh

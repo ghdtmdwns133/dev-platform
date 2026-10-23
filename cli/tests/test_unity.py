@@ -541,6 +541,19 @@ GIT_OK = {
     ("remote", "get-url", "origin"): (0, "https://github.com/octo/repo.git", ""),
 }
 
+GITHUB_ENV_KEYS = (
+    "GITHUB_ACTIONS",
+    "GITHUB_SHA",
+    "GITHUB_REF",
+    "GITHUB_REF_NAME",
+    "GITHUB_HEAD_REF",
+)
+
+
+def _clear_github_env(monkeypatch) -> None:
+    for key in GITHUB_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
 
 def _upload_tree(tmp_path: Path) -> Path:
     reports = tmp_path / "reports"
@@ -556,6 +569,7 @@ def _upload_tree(tmp_path: Path) -> Path:
 
 
 def test_coverage_upload_builds_codecov_argv(tmp_path: Path, monkeypatch) -> None:
+    _clear_github_env(monkeypatch)
     reports = _upload_tree(tmp_path)
     monkeypatch.setattr(unity, "_git", _fake_git(GIT_OK))
     runner = FakeRunner()
@@ -576,6 +590,7 @@ def test_coverage_upload_builds_codecov_argv(tmp_path: Path, monkeypatch) -> Non
 
 
 def test_coverage_upload_preconditions(tmp_path: Path, monkeypatch) -> None:
+    _clear_github_env(monkeypatch)
     reports = _upload_tree(tmp_path)
     monkeypatch.setattr(unity, "_git", _fake_git(GIT_OK))
     with pytest.raises(DevctlError) as excinfo:
@@ -595,6 +610,57 @@ def test_coverage_upload_preconditions(tmp_path: Path, monkeypatch) -> None:
         unity.coverage_upload(tmp_path, reports, PLATFORM_HOME, runner=FakeRunner(), token="t")
     assert excinfo.value.code == 2
     assert "commit must be pushed" in excinfo.value.message
+
+
+def test_coverage_upload_uses_github_actions_context(tmp_path: Path, monkeypatch) -> None:
+    _clear_github_env(monkeypatch)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_SHA", "0123456789abcdef0123456789abcdef01234567")
+    monkeypatch.setenv("GITHUB_REF", "refs/heads/main")
+    monkeypatch.setenv("GITHUB_REF_NAME", "main")
+    # A dirty, unpushed workspace must not block the runner: only origin is read.
+    mapping = {("remote", "get-url", "origin"): (0, "https://github.com/octo/repo.git", "")}
+    monkeypatch.setattr(unity, "_git", _fake_git(mapping))
+    reports = _upload_tree(tmp_path)
+    runner = FakeRunner()
+    step = unity.coverage_upload(tmp_path, reports, PLATFORM_HOME, runner=runner, token="t")
+    assert step.status == "passed"
+    argv = runner.calls[0]["argv"]
+    assert argv[argv.index("--sha") + 1] == "0123456789abcdef0123456789abcdef01234567"
+    assert argv[argv.index("--branch") + 1] == "main"
+    assert "--pr" not in argv
+
+
+def test_coverage_upload_github_pull_request(tmp_path: Path, monkeypatch) -> None:
+    _clear_github_env(monkeypatch)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_SHA", "fedcba9876543210fedcba9876543210fedcba98")
+    monkeypatch.setenv("GITHUB_REF", "refs/pull/42/merge")
+    monkeypatch.setenv("GITHUB_REF_NAME", "42/merge")
+    monkeypatch.setenv("GITHUB_HEAD_REF", "feature/coverage")
+    mapping = {("remote", "get-url", "origin"): (0, "https://github.com/octo/repo.git", "")}
+    monkeypatch.setattr(unity, "_git", _fake_git(mapping))
+    reports = _upload_tree(tmp_path)
+    runner = FakeRunner()
+    unity.coverage_upload(tmp_path, reports, PLATFORM_HOME, runner=runner, token="t")
+    argv = runner.calls[0]["argv"]
+    assert argv[argv.index("--branch") + 1] == "feature/coverage"
+    assert argv[argv.index("--pr") + 1] == "42"
+
+
+def test_coverage_upload_falls_back_to_local_without_github_sha(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _clear_github_env(monkeypatch)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr(unity, "_git", _fake_git(GIT_OK))
+    reports = _upload_tree(tmp_path)
+    runner = FakeRunner()
+    unity.coverage_upload(tmp_path, reports, PLATFORM_HOME, runner=runner, token="t")
+    argv = runner.calls[0]["argv"]
+    assert argv[argv.index("--sha") + 1] == "abc123"
+    assert argv[argv.index("--branch") + 1] == "main"
+    assert "--pr" not in argv
 
 
 def test_github_slug_formats(tmp_path: Path, monkeypatch) -> None:

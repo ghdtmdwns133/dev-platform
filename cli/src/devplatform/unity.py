@@ -776,6 +776,48 @@ def _platform_from_report(report: Path, unity_dir: Path) -> str:
     return "unity"
 
 
+def github_actions_target() -> tuple[str, str, str | None] | None:
+    """Return ``(sha, branch, pull_request)`` when GitHub Actions provides the commit.
+
+    Inside Actions the workspace checkout *is* the remote commit, so the local
+    dirty-tree/pushed-commit guards do not apply. ``GITHUB_HEAD_REF`` names the
+    source branch of a pull request; otherwise ``GITHUB_REF_NAME`` is the branch.
+    """
+    if os.environ.get("GITHUB_ACTIONS", "").lower() != "true":
+        return None
+    sha = os.environ.get("GITHUB_SHA", "").strip()
+    if not sha:
+        return None
+    branch = (os.environ.get("GITHUB_HEAD_REF") or os.environ.get("GITHUB_REF_NAME") or "").strip()
+    if not branch:
+        raise DevctlError(EXIT_PRECONDITION, "cannot determine branch for coverage upload")
+    match = re.search(r"refs/pull/(\d+)/", os.environ.get("GITHUB_REF", ""))
+    return sha, branch, match.group(1) if match else None
+
+
+def local_upload_target(root: Path) -> tuple[str, str, None]:
+    """Validate a local checkpoint and return ``(sha, branch, None)``."""
+    code, status, _ = _git(root, "status", "--porcelain")
+    if code != 0:
+        raise DevctlError(
+            EXIT_EXECUTION, "git status failed; coverage upload requires a git checkout"
+        )
+    if status:
+        raise DevctlError(EXIT_PRECONDITION, "commit must be pushed before coverage upload")
+    code, sha, _ = _git(root, "rev-parse", "HEAD")
+    if code != 0 or not sha:
+        raise DevctlError(EXIT_EXECUTION, "could not read HEAD for coverage upload")
+    code, contains, _ = _git(root, "branch", "-r", "--contains", "HEAD")
+    if code != 0 or not contains:
+        raise DevctlError(EXIT_PRECONDITION, "commit must be pushed before coverage upload")
+    code, branch, _ = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    if code != 0 or not branch or branch == "HEAD":
+        raise DevctlError(
+            EXIT_PRECONDITION, "coverage upload requires a checked-out branch (detached HEAD)"
+        )
+    return sha, branch, None
+
+
 def coverage_upload(
     root: Path,
     reports_dir: Path,
@@ -795,24 +837,8 @@ def coverage_upload(
     token = token if token is not None else os.environ.get("CODECOV_TOKEN", "")
     if not token:
         raise DevctlError(EXIT_PRECONDITION, "CODECOV_TOKEN not set (run via 'doppler run --')")
-    code, status, _ = _git(root, "status", "--porcelain")
-    if code != 0:
-        raise DevctlError(
-            EXIT_EXECUTION, "git status failed; coverage upload requires a git checkout"
-        )
-    if status:
-        raise DevctlError(EXIT_PRECONDITION, "commit must be pushed before coverage upload")
-    code, sha, _ = _git(root, "rev-parse", "HEAD")
-    if code != 0 or not sha:
-        raise DevctlError(EXIT_EXECUTION, "could not read HEAD for coverage upload")
-    code, contains, _ = _git(root, "branch", "-r", "--contains", "HEAD")
-    if code != 0 or not contains:
-        raise DevctlError(EXIT_PRECONDITION, "commit must be pushed before coverage upload")
-    code, branch, _ = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
-    if code != 0 or not branch or branch == "HEAD":
-        raise DevctlError(
-            EXIT_PRECONDITION, "coverage upload requires a checked-out branch (detached HEAD)"
-        )
+    target = github_actions_target()
+    sha, branch, pull_request = target if target is not None else local_upload_target(root)
     slug = github_slug(root)
     version = load_versions(Path(platform_home)).get("tools", {}).get("codecovCli")
     if not version:
@@ -834,10 +860,16 @@ def coverage_upload(
         sha,
         "--branch",
         branch,
-        "--flag",
-        "unity",
-        "--fail-on-error",
     ]
+    if pull_request:
+        argv.extend(["--pr", pull_request])
+    argv.extend(
+        [
+            "--flag",
+            "unity",
+            "--fail-on-error",
+        ]
+    )
     for file in reports:
         argv.extend(["--file", str(file)])
     log = reports_dir / profile / "unity-coverage-upload.log"
