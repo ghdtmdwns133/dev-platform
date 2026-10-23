@@ -94,7 +94,7 @@ jobs:
       tag_name: ${{ inputs.rebuild-tag != '' && inputs.rebuild-tag || (steps.release-pr.outputs.release_created == 'true' && steps.release-pr.outputs.tag_name || steps.release.outputs.tag_name) }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Validate release-please configuration
@@ -193,7 +193,7 @@ jobs:
           echo "::notice::Merged release PR #${number}"
       - name: Check out the updated default branch
         if: ${{ github.event_name == 'workflow_run' }}
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
@@ -201,7 +201,7 @@ jobs:
       - name: Run release-please
         id: release-pr
         if: ${{ inputs.rebuild-tag == '' }}
-        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           token: ${{ github.token }}
           config-file: release-please-config.json
@@ -313,7 +313,7 @@ jobs:
           exit 0
       - name: Check out the merged default branch
         if: ${{ inputs.rebuild-tag == '' && steps.release-pr.outputs.release_created != 'true' }}
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
@@ -321,7 +321,7 @@ jobs:
       - name: Run release-please after merge
         id: release
         if: ${{ inputs.rebuild-tag == '' && steps.release-pr.outputs.release_created != 'true' }}
-        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           token: ${{ github.token }}
           config-file: release-please-config.json
@@ -364,13 +364,13 @@ jobs:
         if: ${{ inputs.profile == 'unity' }}
         run: echo "::notice::Unity Build Automation not configured; using self-hosted build"
       - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
           clean: ${{ !contains(inputs.runs-on, 'self-hosted') }}
           persist-credentials: false
       - name: Check out dev-platform
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ghdtmdwns133/dev-platform
           ref: ${{ inputs.platform-ref }}
@@ -378,20 +378,20 @@ jobs:
           clean: ${{ !contains(inputs.runs-on, 'self-hosted') }}
           persist-credentials: false
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: "3.12"
           enable-cache: true
       - name: Set up Node.js
         if: ${{ inputs.profile == 'typescript' }}
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: package-lock.json
       - name: Set up .NET
         if: ${{ inputs.profile == 'dotnet' }}
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
       - name: Check tool versions
@@ -420,7 +420,7 @@ jobs:
         run: Invoke-Expression $env:BUILD_COMMAND
       - name: Upload release artifacts
         if: ${{ inputs.artifact-path != '' && inputs.artifact-name != '' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.artifact-name }}
           path: ${{ inputs.artifact-path }}
@@ -437,7 +437,7 @@ jobs:
       contents: read
     steps:
       - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
           persist-credentials: false
@@ -465,7 +465,7 @@ jobs:
           zip -j "artifacts/ProjectDelta-${ref}.zip" "${files[@]}"
       - name: Upload release artifacts
         if: ${{ inputs.artifact-path != '' && inputs.artifact-name != '' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.artifact-name }}
           path: ${{ inputs.artifact-path }}
@@ -483,7 +483,7 @@ jobs:
     steps:
       - name: Download release artifacts
         if: ${{ inputs.artifact-name != '' }}
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ inputs.artifact-name }}
           path: release-assets
