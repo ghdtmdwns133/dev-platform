@@ -29,6 +29,7 @@ from typing import Any
 
 PLATFORM_ROOT = Path(__file__).resolve().parents[1]
 COPIER_VERSION = "9.19.1"
+PRE_COMMIT_VERSION = "4.7.0"
 DOPPLER_PROJECT = "dev-platform-shared"
 DOPPLER_CONFIG = "prd"
 STACKS = ("python", "typescript", "dotnet", "unity", "other")
@@ -216,6 +217,17 @@ def ensure_git_repository(root: Path, plan: Plan) -> None:
     plan.run(["git", "init", "-b", "main"], cwd=root)
     plan.run(["git", "add", "-A"], cwd=root)
     plan.run(["git", "commit", "-m", "chore: initial commit"], cwd=root)
+
+
+def install_pre_commit(root: Path, plan: Plan) -> None:
+    if not (root / ".pre-commit-config.yaml").is_file():
+        return
+    plan.run(
+        ["uvx", f"pre-commit@{PRE_COMMIT_VERSION}", "install"],
+        cwd=root,
+    )
+    if not plan.dry_run:
+        log("pre-commit hook installed")
 
 
 def repository_exists(plan: Plan, repo: str) -> bool:
@@ -429,6 +441,7 @@ def main(argv: list[str] | None = None) -> int:
     if not plan.dry_run and not root.is_dir():
         raise SystemExit(f"error: repository root does not exist: {root}")
     ensure_git_repository(root, plan)
+    install_pre_commit(root, plan)
     repo = f"{args.owner}/{args.name}"
     exists = ensure_remote_repository(args, root, repo, plan)
     if not exists:

@@ -40,7 +40,7 @@ jobs:
     uses: {{ owner }}/dev-platform/.github/workflows/ci.yml@{{ platform_ref }}
     with:
       run-tests: {{ 'false' if stack == 'other' else 'true' }}
-      enable-codecov: {{ 'true' if enable_codecov else 'false' }}
+      enable-codecov: {{ 'true' if enable_codecov and stack != 'other' else 'false' }}
       working-directory: "."
     secrets:
       codecov_token: {% raw %}${{ secrets.CODECOV_TOKEN }}{% endraw %}

@@ -55,4 +55,4 @@ run = "dotnet pack DevFlow.slnx -c Release -o dist"
 {% else %}
 [tasks.check]
 run = "pre-commit run --all-files"
-{% endif %}
+{% endif -%}
