@@ -1,0 +1,39 @@
+{
+  "name": "platform-gates",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["~DEFAULT_BRANCH"],
+      "exclude": []
+    }
+  },
+  "bypass_actors": [
+    {
+      "actor_id": 5,
+      "actor_type": "RepositoryRole",
+      "bypass_mode": "always"
+    }
+  ],
+  "rules": [
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "required_status_checks": [
+          { "context": "cli" },
+          { "context": "template (python)" },
+          { "context": "template (typescript)" },
+          { "context": "template (dotnet)" },
+          { "context": "template (unity)" },
+          { "context": "template (other)" },
+          { "context": "workflow-lint" },
+          { "context": "security / scan" }
+        ]
+      }
+    }
+  ]
+}
