@@ -188,6 +188,14 @@ jobs:
         if: ${{ needs.changes.outputs.unity_changed == 'true' && inputs.enable-odin }}
         shell: pwsh
         run: uv run --project "$env:GITHUB_WORKSPACE/.dev-platform/cli" devctl unity odin
+      - name: Upload Unity test reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: reports-unity
+          path: ${{ inputs.project-path }}/artifacts/reports
+          if-no-files-found: warn
+          retention-days: 14
 
   build:
     name: build
