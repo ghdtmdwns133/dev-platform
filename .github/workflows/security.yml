@@ -18,11 +18,6 @@ on:
         required: false
         default: false
         type: boolean
-      platform-ref:
-        description: dev-platform ref consumed by the scan composite.
-        required: false
-        default: v1
-        type: string
 
 permissions:
   contents: read

@@ -13,11 +13,6 @@ on:
         required: false
         default: false
         type: boolean
-      platform-ref:
-        description: dev-platform ref this caller uses; reserved for the addressed tag.
-        required: false
-        default: v1
-        type: string
     secrets:
       codecov_token:
         description: Codecov upload token.

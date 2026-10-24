@@ -354,7 +354,7 @@ jobs:
   build:
     name: build
     needs: [release-please, mode]
-    if: ${{ needs.release-please.outputs.release_created == 'true' && (inputs.profile != 'unity' || needs.mode.outputs.uba != 'true') }}
+    if: ${{ needs.release-please.outputs.release_created == 'true' && (inputs.profile != 'unity' || needs.mode.outputs.uba != 'true') && (github.event.repository.private == true || !contains(inputs.runs-on, 'self-hosted')) }}
     runs-on: ${{ fromJSON(inputs.runs-on) }}
     timeout-minutes: 60
     permissions:

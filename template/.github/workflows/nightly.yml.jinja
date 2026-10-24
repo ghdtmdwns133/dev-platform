@@ -23,19 +23,13 @@ jobs:
       actions: read
     uses: {{ owner }}/dev-platform/.github/workflows/unity.yml@{{ platform_ref }}
     with:
-      unity-runner: self-hosted
-      unity-version: "6000.5.1f1"
-      build: true
+      unity-runner: {{ 'none' if visibility == 'public' else 'self-hosted' }}
+      build: {{ 'false' if visibility == 'public' else 'true' }}
       platform-ref: {{ platform_ref }}
-    secrets:
-      UNITY_LICENSE: {% raw %}${{ secrets.UNITY_LICENSE }}{% endraw %}
-      UNITY_EMAIL: {% raw %}${{ secrets.UNITY_EMAIL }}{% endraw %}
-      UNITY_PASSWORD: {% raw %}${{ secrets.UNITY_PASSWORD }}{% endraw %}
 {% else %}
     uses: {{ owner }}/dev-platform/.github/workflows/nightly.yml@{{ platform_ref }}
     with:
       working-directory: "."
       enable-codecov: false
-      platform-ref: {{ platform_ref }}
 {% endif %}
 # Generated from the dev-platform Copier template.
