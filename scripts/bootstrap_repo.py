@@ -58,6 +58,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--template", choices=STACKS, help="render this stack before bootstrapping")
     parser.add_argument("--dest", help="destination directory for --template rendering")
+    parser.add_argument(
+        "--template-source",
+        default=None,
+        help="Copier source (default: gh:<owner>/dev-platform)",
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="render from this checkout instead of the canonical GitHub source (self-test only)",
+    )
+    parser.add_argument(
+        "--template-ref",
+        default=None,
+        help="Copier template ref (default: latest PEP 440 git tag)",
+    )
     parser.add_argument("--root", default=".", help="repository root to bootstrap (default: cwd)")
     parser.add_argument("--name", required=True, help="repository name")
     parser.add_argument("--owner", default="ghdtmdwns133", help="GitHub account")
@@ -134,13 +149,14 @@ class Plan:
                 prefix = f"+ {shlex.join(argv)} <<< {json.dumps(body, sort_keys=True)}"
                 print(prefix)
                 return None
-        result = self.run(argv, stdin=stdin, capture=body is None or self.dry_run)
-        if self.dry_run or not result.stdout.strip():
+        result = self.run(argv, stdin=stdin, capture=True)
+        output = (result.stdout or "").strip()
+        if self.dry_run or not output:
             return None
         try:
-            return json.loads(result.stdout)
+            return json.loads(output)
         except json.JSONDecodeError:
-            return result.stdout
+            return output
 
     def secret(self, repo: str, name: str, value: str) -> None:
         if self.dry_run:
@@ -199,12 +215,20 @@ def render(args: argparse.Namespace, plan: Plan) -> Path:
     }
     if args.template == "typescript":
         data["enable_sentry"] = "true" if args.enable_sentry else "false"
+    if args.template_source:
+        source = args.template_source
+    elif args.local:
+        source = str(PLATFORM_ROOT)
+    else:
+        source = f"gh:{args.owner}/dev-platform"
     argv = ["uvx", f"copier@{COPIER_VERSION}", "copy", "--defaults"]
     if args.force:
         argv.append("--force")
+    if args.template_ref:
+        argv.extend(["--vcs-ref", args.template_ref])
     for key, value in data.items():
         argv.extend(["--data", f"{key}={value}"])
-    argv.extend([str(PLATFORM_ROOT), str(destination)])
+    argv.extend([source, str(destination)])
     plan.run(argv)
     if not plan.dry_run:
         log(f"rendered {args.template} template: {destination}")
@@ -310,6 +334,17 @@ def apply_labels(repo: str, plan: Plan) -> None:
 def apply_ruleset(root: Path, repo: str, plan: Plan) -> None:
     path = root / ".github" / "rulesets" / "platform-gates.json"
     if not path.is_file():
+        if plan.dry_run:
+            print(f"+ gh api --method GET repos/{repo}/rulesets  # find platform-gates by name")
+            print(
+                f"+ gh api --method POST repos/{repo}/rulesets"
+                f" <<< <rendered {path.name}>  # when absent"
+            )
+            print(
+                f"+ gh api --method PUT repos/{repo}/rulesets/<id>"
+                f" <<< <rendered {path.name}>  # when present"
+            )
+            return
         notice(f"no ruleset file at {path}; skipping platform-gates")
         return
     payload = json.loads(path.read_text(encoding="utf-8"))
