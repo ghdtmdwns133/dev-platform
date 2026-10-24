@@ -110,8 +110,9 @@ For an existing repository, add the generated surfaces explicitly:
    `run-tests: false`), plus `security.yml`, `nightly.yml` and `release.yml` as
    needed.
 5. `renovate.json` with `"extends": ["github>ghdtmdwns133/dev-platform"]`.
-6. `release-please-config.json` and `.release-please-manifest.json` when the
-   repository uses release-please.
+6. `release-please-config.json` and `.release-please-manifest.json` for
+   non-Unity or private Unity repositories that use release-please. Public
+   Unity has no release workflow.
 7. `.github/rulesets/platform-gates.json` if the bootstrap should reconcile the
    ruleset; the bootstrap prints a notice and skips the ruleset when the file is
    absent.
@@ -294,9 +295,11 @@ the semver tags exist.
 
 ## Release automation
 
-Generated repositories (except `other`) contain `release-please-config.json`
-and `.release-please-manifest.json`. The caller `release.yml` runs on pushes to
-`main`, a daily schedule, and manual dispatch. It asks release-please to open or
+Non-Unity and private Unity repositories contain `release-please-config.json`
+and `.release-please-manifest.json`, plus the caller `release.yml`. Public
+Unity renders omit `release.yml` entirely, so they have no release-please flow
+and produce no release assets. For the repositories that do have it,
+`release.yml` runs on pushes to `main`, a daily schedule, and manual dispatch. It asks release-please to open or
 update the Release PR, labels it `automerge`, and enables GitHub auto-merge with
 `gh pr merge --auto --squash`. Merging the Release PR creates the tag. Because a
 tag created with `GITHUB_TOKEN` does not trigger another workflow, the same run

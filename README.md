@@ -37,8 +37,11 @@ same commands and the same configuration.
   listed in `unity.testPlatforms`), build, Odin bridge, NUnit-to-JUnit
   conversion, coverage upload and Unity Build Automation. Non-Unity stacks are
   verified by their mise tasks, not by `devctl`.
-- **releases** — release-please opens the Release PR; merging it creates the
-  tag, and the same workflow builds and attaches the assets.
+- **releases** — for non-Unity and private Unity repositories, release-please
+  opens the Release PR; merging it creates the tag, and the same workflow
+  builds and attaches the assets. Public Unity renders omit the release
+  workflow and produce no release assets (integrity and nightly integrity
+  only).
 
 ## Quick start
 

@@ -188,6 +188,8 @@ uv run --project C:/dev/dev-platform/cli devctl unity cloud-build --commit <sha>
 
 ## 5. 릴리스
 
+public Unity 템플릿은 `.github/workflows/release.yml`을 만들지 않으므로 아래 자동 릴리스 절차가 없다. public Unity는 integrity와 nightly integrity만 돌고 릴리스 자산을 만들지 않는다. private Unity와 비-Unity 저장소가 대상이다.
+
 ### 5.1 conventional commit
 
 release-please는 커밋 메시지로 버전을 정한다.
@@ -234,7 +236,7 @@ mise run check
 
 `--template`은 `python`, `typescript`, `dotnet`, `unity`, `other` 중 하나다. `--visibility`, `--owner`, `--platform-ref`, `--min-coverage`, `--template-source`(기본 `https://github.com/<owner>/dev-platform`), `--template-ref`(기본 최신 PEP 440 태그), `--local`(개발/self-test용), `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. GitHub 저장소를 만들지 않고 렌더링만 하려면 `--no-create-repo`를 쓰거나 `uvx copier copy`를 직접 실행한다. 정확한 플래그는 `--help`로 확인한다.
 
-생성되는 주요 파일은 `.copier-answers.yml`, `mise.toml`, `.pre-commit-config.yaml`, `renovate.json`, caller 워크플로(`ci.yml`, `nightly.yml`, `release.yml`), `.github/rulesets/platform-gates.json`, release-please 설정이다. devcontainer는 python/typescript/dotnet에만, `.devplatform/config.json`과 Odin 브리지는 Unity에만 들어간다. Unity 결과물은 완전한 Unity 프로젝트가 아니라 Unity 프로젝트 루트에 놓는 플랫폼 계층이므로, 기존 Unity 프로젝트에 렌더링해 `.devplatform/config.json`을 맞춘다. Unity에서 `mise run check`를 CI 필수 검사로도 쓰려면 `ci.yml`을 `run-tests: false`로 호출하는 `platform-check` 작업을 추가한다(`project-delta`가 이렇게 한다). 기존 저장소를 손으로 붙이는 방법과 ruleset 설정은 [ADOPTION.md](ADOPTION.md)에 있다.
+생성되는 주요 파일은 `.copier-answers.yml`, `mise.toml`, `.pre-commit-config.yaml`, `renovate.json`, caller 워크플로(`ci.yml`, `nightly.yml`, `release.yml`), `.github/rulesets/platform-gates.json`, release-please 설정이다. public Unity는 `release.yml`과 release-please 흐름을 만들지 않는다. devcontainer는 python/typescript/dotnet에만, `.devplatform/config.json`과 Odin 브리지는 Unity에만 들어간다. Unity 결과물은 완전한 Unity 프로젝트가 아니라 Unity 프로젝트 루트에 놓는 플랫폼 계층이므로, 기존 Unity 프로젝트에 렌더링해 `.devplatform/config.json`을 맞춘다. Unity에서 `mise run check`를 CI 필수 검사로도 쓰려면 `ci.yml`을 `run-tests: false`로 호출하는 `platform-check` 작업을 추가한다(`project-delta`가 이렇게 한다). 기존 저장소를 손으로 붙이는 방법과 ruleset 설정은 [ADOPTION.md](ADOPTION.md)에 있다.
 
 ## 7. 비용과 한도
 

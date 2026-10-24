@@ -245,6 +245,7 @@ gh workflow run release.yml -R ghdtmdwns133/project-delta --ref main \
 ## 9. 알려진 제약
 
 - **Unity 학생 라이선스.** 보유 라이선스는 named-user Student라 시리얼도 `.ulf`도 없다. GameCI v4가 지원하는 활성화 방식이 아니고, Unity Editor Software Terms §2.8은 서드파티가 클라우드/원격 서버에서 에디터를 실행하는 것을 금지한다. 그래서 `unity.yml`에는 `gameci` 옵션과 GameCI 작업·라이선스 시크릿이 없으며, GitHub 호스팅 러너에서 Unity를 돌리는 경로는 제공하지 않는다.
+- **public Unity 릴리스 없음.** public Unity 렌더는 `.github/workflows/release.yml`을 생성하지 않으므로 release-please와 릴리스 자산이 없다. integrity와 nightly integrity만 돌린다. private Unity만 self-hosted/UBA 릴리스 경로를 쓴다.
 - **gitleaks 전체 히스토리.** `actions/security-scan`은 전체 히스토리를 스캔한다. 과거 커밋의 비밀도 계속 잡히며, 비밀을 교체해도 히스토리에 남아 있으면 빨간색이 유지된다. 브랜치 삭제는 그 커밋이 기본 브랜치 히스토리에 없을 때만 효과가 있다.
 - **`GITHUB_TOKEN` PR.** `GITHUB_TOKEN`으로 만든 PR은 `pull_request` 워크플로를 트리거하지 않는다. release-please의 Release PR이 그렇기 때문에 `release.yml`이 CI를 대신 dispatch하고, `action_required` 실행을 승인한 뒤 병합을 기다린다.
 - **docs-only push.** caller가 `paths-ignore: [docs/**, "**/*.md"]`를 두므로 문서만 바꾸면 CI가 생기지 않을 수 있다. 필수 검사가 있는 저장소에서는 소유자 bypass로 병합하거나 코드 변경을 섞는다.

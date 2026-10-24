@@ -38,9 +38,12 @@ run. When nothing relevant changed, the Unity job stays green and prints
 `::notice::no Unity-relevant changes`.
 
 Builds are excluded from default verification. The `build` input (default
-false) runs `devctl unity build` on the self-hosted runner, zips
+false) runs `devctl unity build` on the private self-hosted runner, zips
 `artifacts/unity-build` to `artifacts/ProjectDelta-<ref>.zip`, and uploads it as
-the `unity-build` artifact. Callers enable it on tags and nightly runs.
+the `unity-build` artifact. Callers enable it on tags and nightly runs. Public
+Unity renders omit `release.yml`, so they produce no release assets; UBA
+`build-cloud` is available only when a caller invokes the reusable release
+workflow directly with the three UBA secrets.
 
 Job and check names: the Unity caller names its job `platform-verify`, so the
 checks are `platform-verify / integrity` and, for a private self-hosted runner,
@@ -92,9 +95,10 @@ option is not reintroduced without a supported license.
 
 Role split:
 
-- The self-hosted PC runner remains the primary Unity CI: EditMode and
-  PlayMode tests on every relevant push and nightly runs. It uses the student's
-  named-user license on the license holder's machine.
+- The self-hosted PC runner remains the primary Unity CI for private
+  repositories: EditMode and PlayMode tests on every relevant push and nightly
+  runs. It uses the student's named-user license on the license holder's
+  machine; public repositories use `unity-runner: none`.
 - UBA is the auxiliary path. It produces the release player and can build on
   demand while the PC is off. Unity operates the build machines, so the
   student named-user license is not involved and no local editor is needed.
