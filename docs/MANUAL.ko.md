@@ -27,11 +27,14 @@ flowchart LR
 
 ### 2.1 commit
 
-생성된 저장소에는 `.pre-commit-config.yaml`이 들어 있다. clone 후 한 번 훅을 설치하면 staged 파일만 빠르게 검사한다. 전체 파일을 검사하려면 `mise run check`를 쓴다.
+생성된 저장소에는 `.pre-commit-config.yaml`이 들어 있다. bootstrap이 새 저장소에서 `mise trust`/`mise install`과 pre-commit 훅 설치를 자동으로 수행한다. 새로 clone한 저장소는 git 훅을 상속하지 않으므로 그때만 한 번 직접 설치한다. staged 파일만 검사하려면 훅을, 전체 파일을 검사하려면 `mise run check`를 쓴다.
 
 ```bash
+# 새 clone에서 한 번
 mise trust && mise install
 mise exec -- pre-commit install
+
+# 이후
 mise run check
 ```
 
@@ -223,14 +226,12 @@ cd C:/dev/dev-platform
 uv run --script scripts/bootstrap_repo.py \
   --template python --name my-service --dest C:/dev/my-service
 cd C:/dev/my-service
-mise trust
-mise install
 mise run check
 ```
 
-`bootstrap_repo.py`가 Copier로 `template/`을 렌더링하고 `.copier-answers.yml`을 남긴다. 이어서 git 초기화와 첫 커밋, `gh repo create`(없을 때만), 저장소 설정·라벨·`platform-gates` ruleset, 가능한 경우 `CODECOV_TOKEN`과 Sentry 설정까지 처리한다. 같은 명령을 다시 실행하면 저장소를 새로 만들지 않고 설정만 맞춘다. 네트워크 호출 없이 계획만 보려면 `--dry-run`을 붙인다.
+`bootstrap_repo.py`가 Copier로 `template/`을 렌더링하고 `.copier-answers.yml`을 남긴다. 이어서 git 초기화와 첫 커밋, `mise trust`/`mise install`과 pre-commit 훅 설치, `gh repo create`(없을 때만), 저장소 설정·라벨·`platform-gates` ruleset, 가능한 경우 `CODECOV_TOKEN`과 Sentry 설정까지 처리한다. 새로 clone한 저장소는 git 훅을 상속하지 않으므로 그때만 `mise trust && mise install && mise exec -- pre-commit install`을 한 번 실행한다. 같은 명령을 다시 실행하면 저장소를 새로 만들지 않고 설정과 훅을 재조정한다. 네트워크 호출 없이 계획만 보려면 `--dry-run`을 붙인다.
 
-`--template`은 `python`, `typescript`, `dotnet`, `unity`, `other` 중 하나다. `--visibility`, `--owner`, `--platform-ref`, `--min-coverage`, `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. GitHub 저장소를 만들지 않고 렌더링만 하려면 `--no-create-repo`를 쓰거나 `uvx copier copy`를 직접 실행한다. 정확한 플래그는 `--help`로 확인한다.
+`--template`은 `python`, `typescript`, `dotnet`, `unity`, `other` 중 하나다. `--visibility`, `--owner`, `--platform-ref`, `--min-coverage`, `--template-source`(기본 `gh:<owner>/dev-platform`), `--template-ref`(기본 최신 PEP 440 태그), `--local`(개발/self-test용), `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. GitHub 저장소를 만들지 않고 렌더링만 하려면 `--no-create-repo`를 쓰거나 `uvx copier copy`를 직접 실행한다. 정확한 플래그는 `--help`로 확인한다.
 
 생성되는 주요 파일은 `.copier-answers.yml`, `mise.toml`, `.pre-commit-config.yaml`, `renovate.json`, caller 워크플로(`ci.yml`, `nightly.yml`, `release.yml`), `.github/rulesets/platform-gates.json`, release-please 설정이다. devcontainer는 python/typescript/dotnet에만, `.devplatform/config.json`과 Odin 브리지는 Unity에만 들어간다. Unity 결과물은 완전한 Unity 프로젝트가 아니라 Unity 프로젝트 루트에 놓는 플랫폼 계층이므로, 기존 Unity 프로젝트에 렌더링해 `.devplatform/config.json`을 맞춘다. Unity에서 `mise run check`를 CI 필수 검사로도 쓰려면 `ci.yml`을 `run-tests: false`로 호출하는 `platform-check` 작업을 추가한다(`project-delta`가 이렇게 한다). 기존 저장소를 손으로 붙이는 방법과 ruleset 설정은 [ADOPTION.md](ADOPTION.md)에 있다.
 
@@ -279,7 +280,7 @@ gh api -X POST repos/ghdtmdwns133/<repo>/actions/runs/<run-id>/approve
 
 **Copier 업데이트 PR이 안 생긴다.** Renovate의 Copier 매니저는 앱 접근, `.copier-answers.yml`, PEP 440 태그(`v1.N.0`)가 모두 있어야 한다. 태그가 아직 없거나 봇 실행 증거가 확인되지 않았다면 로컬에서 `uvx copier update --defaults`를 실행하고 diff를 검토한다.
 
-**`mise`가 설정 파일을 신뢰하지 않는다.** 새로 만든 저장소에서는 `mise trust`를 한 번 실행한 뒤 `mise install`을 쓴다.
+**`mise`가 설정 파일을 신뢰하지 않는다.** bootstrap이 만든 저장소는 이미 `mise trust`/`mise install`이 끝나 있다. 새로 clone한 저장소에서만 `mise trust`를 한 번 실행한 뒤 `mise install`을 쓴다.
 
 **릴리스는 생겼는데 자산이 없다.** 자산 빌드만 실패한 경우다. `gh workflow run release.yml -R ghdtmdwns133/<repo> --ref main -f rebuild-tag=<tag>`로 그 태그를 다시 빌드하면 자산이 교체된다(5.3).
 

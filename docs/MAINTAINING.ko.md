@@ -151,7 +151,7 @@ uv run --script scripts/bootstrap_repo.py \
   --template python --name my-service --dest C:/dev/my-service
 ```
 
-`--dry-run`으로 계획을 먼저 보고, `--owner`, `--visibility`, `--platform-ref`, `--min-coverage`, `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. bootstrap은 git 초기화·첫 커밋, `gh repo create`(없을 때만), retention 14일, workflow 권한, auto-merge, branch 삭제, 취약점 알림, 라벨, `platform-gates` ruleset, 가능한 경우 Codecov/Sentry 시크릿을 처리한다. 같은 명령을 다시 실행하면 설정만 재조정한다.
+`--dry-run`으로 계획을 먼저 보고, `--owner`, `--visibility`, `--platform-ref`, `--min-coverage`, `--template-source`(기본 `gh:<owner>/dev-platform`), `--template-ref`(기본 최신 PEP 440 태그), `--local`(개발/self-test용), `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. bootstrap은 git 초기화·첫 커밋, `mise trust`/`mise install`과 pre-commit 훅 설치, `gh repo create`(없을 때만), retention 14일, workflow 권한, auto-merge, branch 삭제, 취약점 알림, 라벨, `platform-gates` ruleset, 가능한 경우 Codecov/Sentry 시크릿을 처리한다. 같은 명령을 다시 실행하면 설정을 재조정하고 훅도 다시 설치한다.
 
 **기존 저장소.** `.copier-answers.yml`을 새로 만들지 않는다. 다음을 직접 넣는다.
 
@@ -169,7 +169,7 @@ uv run --script scripts/bootstrap_repo.py \
   --name project-delta --visibility private --dry-run
 ```
 
-`--root` 모드는 `gh repo create`를 건너뛰고, `<root>/.github/rulesets/platform-gates.json`이 있으면 ruleset을 갱신하며, 없으면 notice만 남긴다. `.copier-answers.yml`은 쓰지 않는다.
+`--root` 모드는 `gh repo create`를 건너뛰고, `mise trust`/`mise install`과 pre-commit 훅 설치를 수행하며, `<root>/.github/rulesets/platform-gates.json`이 있으면 ruleset을 갱신하고 없으면 notice만 남긴다. `.copier-answers.yml`은 쓰지 않는다.
 
 **필수 검사.** 첫 초록 실행 뒤 실제 이름을 확인한다.
 

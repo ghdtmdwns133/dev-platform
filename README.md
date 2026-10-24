@@ -40,8 +40,8 @@ same commands and the same configuration.
 
 ## Quick start
 
-Prerequisites: `uv` (which provides `uvx`), `git`, and an authenticated `gh`.
-From a dev-platform checkout:
+Prerequisites: `uv` (which provides `uvx`), `git`, `mise`, and an authenticated
+`gh`. From a dev-platform checkout:
 
 ```bash
 uv run --script scripts/bootstrap_repo.py \
@@ -49,25 +49,36 @@ uv run --script scripts/bootstrap_repo.py \
   --name my-service \
   --dest C:/dev/my-service
 cd C:/dev/my-service
-mise trust
-mise install
 mise run check
 ```
 
-The bootstrap asks Copier for the stack-specific files and then applies the
-repository settings. It writes `.copier-answers.yml` (Copier, not the script).
-Pass `--owner`, `--visibility`, `--platform-ref`, `--min-coverage`,
+The bootstrap asks Copier for the stack-specific files, applies the repository
+settings, runs `mise trust`/`mise install`, and installs the pre-commit hook.
+It writes `.copier-answers.yml` (Copier, not the script). Pass `--owner`,
+`--visibility`, `--platform-ref`, `--min-coverage`,
 `--enable-codecov`/`--no-enable-codecov`,
 `--enable-sentry`/`--no-enable-sentry`, or `--no-create-repo` as needed.
 `--dry-run` prints every planned command without network access, rendering or
 writes. The bootstrap is idempotent; re-running it reconciles settings, labels
 and the ruleset without creating a second repository.
 
+A fresh clone later cannot inherit git hooks, so install them once there:
+
+```bash
+mise trust && mise install
+mise exec -- pre-commit install
+```
+
 To render only, without any GitHub work, use Copier directly:
 
 ```bash
 uvx copier copy gh:ghdtmdwns133/dev-platform my-service
 ```
+
+The default Copier source is `gh:ghdtmdwns133/dev-platform` at the latest PEP
+440 tag; `--template-source` overrides it and `--template-ref` pins a ref.
+`--local` renders from the current checkout instead and is intended for
+development/self-test, not normal project creation.
 
 The Unity template is a platform layer, not a complete Unity project: render it
 into a Unity project root and adjust `.devplatform/config.json`.

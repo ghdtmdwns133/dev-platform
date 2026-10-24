@@ -20,12 +20,19 @@ uploads as an artifact. `build` writes the release artifact under `dist/`.
 `test` and `build` are absent for `other`; Unity has no `test` task because its
 test execution belongs to `unity.yml` and `devctl`.
 
-First-time setup in a generated repository:
+`scripts/bootstrap_repo.py` already runs `mise trust`, `mise install` and
+`mise exec -- pre-commit install` for a newly created repository. A fresh clone
+cannot inherit git hooks, so run this one-time setup there:
 
 ```bash
 mise trust
 mise install
-mise exec -- pre-commit install   # optional: run the same check on staged files
+mise exec -- pre-commit install
+```
+
+Then run the same tasks as CI:
+
+```bash
 mise run check
 mise run test
 ```

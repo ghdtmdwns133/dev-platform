@@ -14,7 +14,10 @@ uv run --script C:/dev/dev-platform/scripts/bootstrap_repo.py \
 `--template` is one of `python`, `typescript`, `dotnet`, `unity`, `other`.
 Optional flags: `--owner` (default `ghdtmdwns133`), `--visibility private|public`
 (default `private`), `--min-coverage` (default 80), `--platform-ref` (default
-`v1`), `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`,
+`v1`), `--template-source` (default `gh:<owner>/dev-platform`),
+`--template-ref` (default latest PEP 440 tag), `--local` (render from this
+checkout for development/self-test), `--create-repo`/`--no-create-repo`,
+`--enable-codecov`/`--no-enable-codecov`,
 `--enable-sentry`/`--no-enable-sentry` (TypeScript only), `--force`, and
 `--dry-run`. Run `uv run --script scripts/bootstrap_repo.py --help` for the
 exact set in the checkout.
@@ -24,20 +27,22 @@ The command is the whole creation path:
 1. Renders `template/` with Copier and writes `.copier-answers.yml`.
 2. Runs `git init` and the first commit when the destination is not yet a
    repository.
-3. Runs `gh repo create <owner>/<name> --<visibility> --source . --push` when
+3. Runs `mise trust`, `mise install`, and
+   `mise exec -- pre-commit install` for the new repository.
+4. Runs `gh repo create <owner>/<name> --<visibility> --source . --push` when
    the repository does not exist. A repository that already exists is not
    recreated.
-4. Applies repository settings: artifact and log retention 14 days, workflow
+5. Applies repository settings: artifact and log retention 14 days, workflow
    permissions read with `can_approve_pull_request_reviews`, auto-merge allowed,
    branch deletion on merge, and vulnerability alerts.
-5. Creates the `automerge` and `ci-alert` labels.
-6. Creates or updates the `platform-gates` ruleset from the rendered
+6. Creates the `automerge` and `ci-alert` labels.
+7. Creates or updates the `platform-gates` ruleset from the rendered
    `.github/rulesets/platform-gates.json` (non-fast-forward plus the stack's
    required checks, with the repository admin bypass).
-7. Sets `CODECOV_TOKEN` when `--enable-codecov` is on and the environment or
+8. Sets `CODECOV_TOKEN` when `--enable-codecov` is on and the environment or
    Doppler (`dev-platform-shared/prd`) supplies it; otherwise prints a notice
    and continues.
-8. When Sentry is enabled and the credentials exist, creates the Sentry project
+9. When Sentry is enabled and the credentials exist, creates the Sentry project
    and sets its four secrets; otherwise prints a notice and continues.
 
 The bootstrap is idempotent. Re-running it reconciles settings, labels and the
@@ -45,8 +50,9 @@ ruleset; it does not need a new repository and never prints secret values.
 `--dry-run` prints the Copier command and every planned `gh`/API call without
 network access, rendering or writes.
 
-Prerequisites are `uv` (for `uv run --script`), `git`, and an authenticated
-`gh`. The bootstrap runs a pinned Copier (`uvx copier@9.19.1`). The template is
+Prerequisites are `uv` (for `uv run --script`), `git`, `mise`, and an
+authenticated `gh`. The bootstrap runs a pinned Copier (`uvx copier@9.19.1`).
+The template is
 pure-safe: `copier.yml` has no `_tasks`, so a direct render also works and
 `copier update` does not need `--trust`:
 
@@ -60,15 +66,20 @@ repository creation and settings. With `--no-create-repo`, the bootstrap still
 checks whether the repository exists; if it does not, it prints a notice and
 skips settings and the ruleset. `--dry-run` is the no-network path.
 
-After creation:
+After creation, the bootstrap has already run `mise trust`/`mise install` and
+installed the pre-commit hook:
 
 ```bash
 cd my-service
-mise trust
-mise install
-mise exec -- pre-commit install   # optional, for staged-file checks
 mise run check
 mise run test
+```
+
+A fresh clone later cannot inherit git hooks, so run the one-time setup there:
+
+```bash
+mise trust && mise install
+mise exec -- pre-commit install
 ```
 
 `mise run check` and `mise run test` are exactly what `ci.yml` runs. The
