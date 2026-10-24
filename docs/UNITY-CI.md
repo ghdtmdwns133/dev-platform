@@ -19,25 +19,33 @@ grounds.
 
 `unity.yml` takes `unity-runner`:
 
-| Value        | Behaviour                                                                 |
-| ------------ | ------------------------------------------------------------------------- |
-| `none`       | Integrity only. The Unity jobs are skipped with a notice.                 |
-| `self-hosted`| Unity runs on the private repository's self-hosted Windows runner.        |
-| `gameci`     | GameCI test and build jobs run; requires a GameCI-supported license.     |
-| `uba`        | Unity Build Automation builds the commit on Unity-hosted Windows machines.|
+| Value         | Behaviour                                                                 |
+| ------------- | ------------------------------------------------------------------------- |
+| `none`        | Integrity only. Unity test/build jobs are skipped with a notice.          |
+| `self-hosted` | Unity runs on the private repository's self-hosted Windows runner.        |
+| `gameci`      | GameCI test and build jobs run; requires a GameCI-supported license.      |
+| `uba`         | Unity Build Automation builds the commit on Unity-hosted Windows machines.|
 
-Integrity always runs on `ubuntu-latest` and never needs an editor. The
-`changes` job on Ubuntu compares the event's base and head commits and reports
-whether `Assets/`, `Packages/` or `ProjectSettings/` changed. Push events use
-`github.event.before` (all-zero or forced pushes run the tests), pull requests
-use the base SHA, and schedule or manual runs always run. When nothing relevant
-changed, the Unity job stays green and prints
+The generated Unity caller uses `unity-runner: self-hosted`. The reusable
+workflow's input default is `none`, so a caller without a runner still gets the
+editor-free integrity gate. The template renders a platform layer to place at a
+Unity project root; it is not a complete Unity project. Integrity always runs on `ubuntu-latest` and never
+needs an editor. The `changes` job on Ubuntu compares the event's base and head
+commits and reports whether `Assets/`, `Packages/` or `ProjectSettings/`
+changed. Push events use `github.event.before` (all-zero or forced pushes run
+the tests), pull requests use the base SHA, and schedule or manual runs always
+run. When nothing relevant changed, the Unity job stays green and prints
 `::notice::no Unity-relevant changes`.
 
 Builds are excluded from default verification. The `build` input (default
 false) runs `devctl unity build` on the self-hosted runner, zips
 `artifacts/unity-build` to `artifacts/ProjectDelta-<ref>.zip`, and uploads it as
 the `unity-build` artifact. Callers enable it on tags and nightly runs.
+
+Job and check names: the Unity caller names its job `platform-verify`, so the
+checks are `platform-verify / integrity` and `platform-verify / tests`.
+`platform-verify / check` does not exist for Unity repositories because they do
+not call `ci.yml`.
 
 ## Self-hosted runner
 
@@ -62,7 +70,11 @@ Use a repository-level runner for the private `project-delta` repository only.
 
 The runner machine needs `uv` on `PATH`; the job checks it with `uv --version`.
 Unity itself is discovered by `devctl` from `unity.editorPath`, the
-`UNITY_EDITOR_PATH` environment variable, or the Hub editor directory.
+`UNITY_EDITOR_PATH` environment variable, or the Hub editor directory. The
+self-hosted job checks out `ghdtmdwns133/dev-platform` at the caller's
+`platform-ref` into `.dev-platform` and runs
+`uv run --project .dev-platform/cli devctl ...` with the consumer repository as
+the working directory.
 
 ## GameCI mode
 
@@ -106,7 +118,7 @@ payment method. See
 and
 <https://support.unity.com/hc/en-us/articles/6093104438932-How-does-the-pricing-for-Unity-Build-Automation-work>.
 
-One-time dashboard setup:
+Dashboard setup (repeat if the project, repository link or API key changes):
 
 1. At <https://cloud.unity.com/home/cloud-build>, open **DevOps > Build
    Automation** and link the Unity Cloud project to the GitHub repository.
@@ -141,9 +153,9 @@ When the release workflow receives `unity_build_api_key`,
 `unity_build_org_id` and `unity_build_project_id`, a `build-cloud` job on
 `ubuntu-latest` supplies the release asset. Without all three secrets it prints
 `::notice::Unity Build Automation not configured; using self-hosted build` and
-runs the self-hosted build command. The Unity template also ships a
-`cloud-build.yml` caller: **Actions > Cloud Build > Run workflow** with a git
-ref starts an on-demand UBA build without the PC.
+runs the self-hosted build command. The generated Unity caller does not ship a
+separate cloud-build workflow; project-delta has its own `cloud-build.yml`
+caller for an on-demand UBA build without the PC.
 
 ## Local verification
 
@@ -152,19 +164,33 @@ cd C:/dev/project-delta
 uv run --project C:/dev/dev-platform/cli devctl verify --profile unity
 ```
 
-- EditMode runs with `-batchmode -nographics`. PlayMode runs with
+A generated Unity layer can run the same CLI without a local platform checkout:
+
+```bash
+uvx --from git+https://github.com/ghdtmdwns133/dev-platform@v1#subdirectory=cli \
+  devctl verify --profile unity
+```
+
+- `project-delta` currently sets `unity.testPlatforms` to `["EditMode"]`, so CI
+  and local `verify` run EditMode only. The template's Unity layer defaults to
+  both modes; a generated Unity repository must set `testPlatforms` explicitly
+  for the tests it can actually run. PlayMode needs a desktop session and
+  injects input, so enabling it is a deliberate configuration change, not part
+  of the default gate.
+- EditMode runs with `-batchmode -nographics`. PlayMode, when enabled, runs with
   `-batchmode` only; `-nographics` is omitted because PlayMode needs graphics
   initialization. `-quit` is not passed to test runs; the editor exits after the
   tests.
-- Test results are NUnit3 XML in `artifacts/reports/unity/`. A run passes when
-  the root has `failed="0"` and `result="Passed"`.
+- Test results are NUnit3 XML under `artifacts/reports/unity/`. A run passes
+  when the root has `failed="0"` and `result="Passed"`.
 - Coverage is read from `coverage-*/Report/Summary.xml`; a missing report is a
-  warning, not a failure.
+  warning, not a failure. The self-hosted test job uploads the OpenCover
+  results to Codecov when `CODECOV_TOKEN` is set.
 - `--unity-build` produces `artifacts/unity-build/ProjectDelta.exe`; success
   requires exit 0, the executable, and a size above 1 MiB.
-- `unity odin` runs the bridge described in
-  `templates/unity/docs/UNITY-ADAPTER.md`. Without Odin the report status is
-  `skipped` and the command exits 0.
+- `unity odin` runs the bridge described in the Unity template's
+  `docs/UNITY-ADAPTER.md`. Without Odin the report status is `skipped` and the
+  command exits 0.
 
 The known flaky test
 `ActiveInterceptBot_ReachesRealSuccess_WithinMissionBudget` is recorded in the

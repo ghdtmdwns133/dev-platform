@@ -1,113 +1,147 @@
 # Adopting dev-platform
 
-## Three steps
+## New repository: one command
 
-1. **Configure the repository.** Add `.devplatform/config.json`:
-
-   ```json
-   {
-     "profile": "python",
-     "reports": "artifacts/reports",
-     "coverage": { "minimum": 85, "enabled": true }
-   }
-   ```
-
-   `profile` is required. Unity projects also add the `unity` block
-   (`version`, `scene`, `sceneGuid`, `requiredObjects`, `allowedScriptRoots`,
-   `templateScripts`, `externalGuidBaseline`, `testPlatforms`, `buildTarget`,
-   `odinEntryPoint`). Unknown keys are rejected so typos fail fast.
-
-2. **Copy the caller workflows.** Start from `devctl init` or copy
-   `.github/workflows/ci.yml` and `nightly.yml` from a rendered template. The
-   jobs must stay named `platform-verify`, `platform-security`,
-   `platform-unity`, `platform-release` and `platform-nightly`; those names are
-   the stable status-check surface.
-
-   ```yaml
-   jobs:
-     platform-verify:
-       name: platform-verify
-       permissions: { contents: read, issues: write }
-       uses: ghdtmdwns133/dev-platform/.github/workflows/quality.yml@v1
-     platform-security:
-       name: platform-security
-       permissions:
-         contents: read
-         issues: write
-         security-events: write
-         actions: read
-       uses: ghdtmdwns133/dev-platform/.github/workflows/security.yml@v1
-   ```
-
-   Pass secrets explicitly. `secrets: inherit` is not used on a personal
-   account.
-
-3. **Run it locally.** Bootstrap the platform once, then run the same command:
-
-   ```bash
-   ./scripts/bootstrap.sh            # or scripts/bootstrap.ps1
-   uv run --project .dev-platform/cli devctl verify --profile python
-   ```
-
-   `bootstrap` checks for uv, Node, .NET and Docker; missing tools are reported
-   with install instructions and the script stops instead of installing
-   silently. It runs `uv sync --project cli`, `devctl versions --check` and
-   `devctl hooks install`. `devctl init` also installs the hook. The pre-commit
-   hook checks only staged files: ruff (Python), eslint/prettier (TypeScript),
-   `dotnet format --include` (.NET) and `unity integrity` (Unity, no editor
-   required).
-
-## Platform ref and SHA record
-
-Consumers reference tags: `ghdtmdwns133/dev-platform/.github/workflows/<file>@v1`
-and `/actions/<name>@v1`. Third-party actions inside the platform are pinned to
-commit SHAs with the human-readable tag in a trailing comment.
-
-The `v1` tag must point at a commit whose workflows and CLI are consistent.
-Record the SHA when the tag is created (the integration owner creates tags; no
-slice commits them):
+From a dev-platform checkout:
 
 ```bash
-git rev-parse v1
+uv run --script C:/dev/dev-platform/scripts/bootstrap_repo.py \
+  --template python \
+  --name my-service \
+  --dest C:/dev/my-service
 ```
 
-Publish that SHA in the release notes and keep this document updated with the
-tag, date and SHA whenever the tag moves.
+`--template` is one of `python`, `typescript`, `dotnet`, `unity`, `other`.
+Optional flags: `--owner` (default `ghdtmdwns133`), `--visibility private|public`
+(default `private`), `--min-coverage` (default 80), `--platform-ref` (default
+`v1`), `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`,
+`--enable-sentry`/`--no-enable-sentry` (TypeScript only), `--force`, and
+`--dry-run`. Run `uv run --script scripts/bootstrap_repo.py --help` for the
+exact set in the checkout.
 
-## Repository settings
+The command is the whole creation path:
 
-Apply these with the API (owner is `ghdtmdwns133`, repository is the consumer):
+1. Renders `template/` with Copier and writes `.copier-answers.yml`.
+2. Runs `git init` and the first commit when the destination is not yet a
+   repository.
+3. Runs `gh repo create <owner>/<name> --<visibility> --source . --push` when
+   the repository does not exist. A repository that already exists is not
+   recreated.
+4. Applies repository settings: artifact and log retention 14 days, workflow
+   permissions read with `can_approve_pull_request_reviews`, auto-merge allowed,
+   branch deletion on merge, and vulnerability alerts.
+5. Creates the `automerge` and `ci-alert` labels.
+6. Creates or updates the `platform-gates` ruleset from the rendered
+   `.github/rulesets/platform-gates.json` (non-fast-forward plus the stack's
+   required checks, with the repository admin bypass).
+7. Sets `CODECOV_TOKEN` when `--enable-codecov` is on and the environment or
+   Doppler (`dev-platform-shared/prd`) supplies it; otherwise prints a notice
+   and continues.
+8. When Sentry is enabled and the credentials exist, creates the Sentry project
+   and sets its four secrets; otherwise prints a notice and continues.
+
+The bootstrap is idempotent. Re-running it reconciles settings, labels and the
+ruleset; it does not need a new repository and never prints secret values.
+`--dry-run` prints the Copier command and every planned `gh`/API call without
+network access, rendering or writes.
+
+Prerequisites are `uv` (for `uv run --script`), `git`, and an authenticated
+`gh`. The bootstrap runs a pinned Copier (`uvx copier@9.19.1`). The template is
+pure-safe: `copier.yml` has no `_tasks`, so a direct render also works and
+`copier update` does not need `--trust`:
 
 ```bash
-gh api -X PATCH repos/ghdtmdwns133/<repo> -F allow_auto_merge=true -F delete_branch_on_merge=true
-gh api -X PUT repos/ghdtmdwns133/<repo>/actions/permissions/artifact-and-log-retention -F days=14
-gh api -X PUT repos/ghdtmdwns133/<repo>/actions/permissions/workflow \
-  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
-gh api -X PUT repos/ghdtmdwns133/<repo>/vulnerability-alerts
+uvx copier copy gh:ghdtmdwns133/dev-platform my-service
 ```
 
-`can_approve_pull_request_reviews=true` is required so release-please can open
-its Release PR with `GITHUB_TOKEN`. The default workflow permission stays
-read-only.
+A direct Copier render never touches GitHub; `create_github_repo` only controls
+whether the post-copy message prints the bootstrap step. Use the bootstrap for
+repository creation and settings. With `--no-create-repo`, the bootstrap still
+checks whether the repository exists; if it does not, it prints a notice and
+skips settings and the ruleset. `--dry-run` is the no-network path.
 
-`pull_request_target` is never used.
+After creation:
+
+```bash
+cd my-service
+mise trust
+mise install
+mise exec -- pre-commit install   # optional, for staged-file checks
+mise run check
+mise run test
+```
+
+`mise run check` and `mise run test` are exactly what `ci.yml` runs. The
+mise-managed toolchain pins live in the generated `mise.toml`; a Unity editor
+is supplied by the host and configured in `.devplatform/config.json`. There is
+no `versions.json`.
+
+## Existing repository (manual adoption)
+
+Copier updates apply only to a repository generated from the template and
+carrying `.copier-answers.yml`. Do not add that file to an existing repository
+just to claim provenance; a hand-migrated repository has no Copier history, and
+`copier update` would be misleading.
+
+For an existing repository, add the generated surfaces explicitly:
+
+1. `mise.toml` with the stack's `[tools]` and `check`/`test`/`build` tasks.
+2. `.pre-commit-config.yaml` with the same hooks the platform runs.
+3. `.devplatform/config.json` for a Unity repository (profile, coverage floor,
+   scene and integrity settings).
+4. Caller workflows: `ci.yml` for non-Unity, or `ci.yml` that calls `unity.yml`
+   for Unity, plus `security.yml`, `nightly.yml` and `release.yml` as needed.
+5. `renovate.json` with `"extends": ["github>ghdtmdwns133/dev-platform"]`.
+6. `release-please-config.json` and `.release-please-manifest.json` when the
+   repository uses release-please.
+7. `.github/rulesets/platform-gates.json` if the bootstrap should reconcile the
+   ruleset; the bootstrap prints a notice and skips the ruleset when the file is
+   absent.
+
+For the existing `project-delta` repository, the Unity surfaces are the
+`.devplatform/config.json` file and the caller `ci.yml` that calls `unity.yml`
+with `unity-runner: self-hosted`. It is EditMode-only (`unity.testPlatforms` is
+`["EditMode"]`). Do not add `.copier-answers.yml`.
+
+Reconcile an existing repository with the same bootstrap, omitting `--template`:
+
+```bash
+uv run --script C:/dev/dev-platform/scripts/bootstrap_repo.py \
+  --root C:/dev/project-delta \
+  --owner ghdtmdwns133 \
+  --name project-delta \
+  --visibility private \
+  --dry-run
+```
+
+Remove `--dry-run` to apply. It skips `gh repo create`, updates the settings,
+labels and ruleset (when the JSON is present), and sets secrets only when their
+values are available.
 
 ## Required status checks
 
-After the first green run, list the real check names:
+After the first green run, read the actual check names:
 
 ```bash
-gh api repos/ghdtmdwns133/<repo>/commits/main/check-runs --jq '[.check_runs[].name] | unique'
+gh api repos/ghdtmdwns133/<repo>/commits/main/check-runs \
+  --jq '[.check_runs[].name] | unique'
 ```
 
-Reusable workflows report names of the form `platform-verify / verify` and
-`platform-security / scan`. Unity callers use `platform-verify` for the
-`unity.yml` gate, so their checks are `platform-verify / integrity` plus
-`platform-verify / tests` (self-hosted or GameCI mode, when Unity files
-changed); `build` and `odin-gameci` appear only when those inputs are enabled.
-Keep only the gate jobs (never `notify`) in the ruleset, and always confirm the
-real names with the command above before writing them down. Then create or
-update the `platform-gates` ruleset:
+| Repository type | Required checks |
+| --------------- | --------------- |
+| `python`, `typescript`, `dotnet` | `platform-verify / check`, `platform-verify / test`, `platform-security / scan` |
+| `other` | `platform-verify / check`, `platform-security / scan` (no test task) |
+| Unity | `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan` |
+
+Unity repositories call only `unity.yml`; they never produce
+`platform-verify / check`. Do not put that name in a Unity ruleset: an absent
+required check blocks every pull request.
+
+Never include `notify` or any build/GameCI job that is normally skipped. Confirm
+the names from the command above before writing the ruleset, because a
+reusable-workflow job name is `<caller job> / <job id>`.
+
+Create or update the ruleset:
 
 ```bash
 gh api -X POST repos/ghdtmdwns133/<repo>/rulesets --input - <<'JSON'
@@ -126,7 +160,8 @@ gh api -X POST repos/ghdtmdwns133/<repo>/rulesets --input - <<'JSON'
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          { "context": "platform-verify / verify" },
+          { "context": "platform-verify / check" },
+          { "context": "platform-verify / test" },
           { "context": "platform-security / scan" }
         ]
       }
@@ -136,115 +171,144 @@ gh api -X POST repos/ghdtmdwns133/<repo>/rulesets --input - <<'JSON'
 JSON
 ```
 
-The single bypass is `RepositoryRole` admin (`actor_id: 5`), so the owner can
-still push directly while bots and pull requests must pass the gates. If a
-ruleset with the same name exists, update it with
-`PUT repos/.../rulesets/<id>` instead of creating a duplicate.
+For `other`, omit the `platform-verify / test` context. For a Unity repository,
+replace the first two contexts with `platform-verify / integrity` and
+`platform-verify / tests`. The single bypass is the repository admin role
+(`actor_id: 5`), so the owner can still push directly while bots and pull
+requests must pass the gates. If a ruleset with the same name exists, update it
+with `PUT repos/.../rulesets/<id>` rather than creating a duplicate.
+`pull_request_target` is never used.
 
-For `dev-platform` itself the required checks are `cli`, `templates (python)`,
-`templates (typescript)`, `templates (dotnet)` and `workflow-lint`.
+### Settings the bootstrap applies
 
-Callers ignore docs-only changes through `paths-ignore` (`docs/**`,
-`**/*.md`). A docs-only pull request therefore has no reported checks; merge it
-as an admin or include a code change if the ruleset must be satisfied.
-
-## Auto-merge
-
-The caller `.github/workflows/auto-merge.yml` triggers on
-`pull_request: [opened, labeled, synchronize, reopened]` and calls the shared
-`auto-merge.yml`. The workflow enables `gh pr merge --auto --squash` when:
-
-- the pull request author is `dependabot[bot]` and the update is
-  semver-patch or semver-minor, or
-- the pull request has the `automerge` label and the author is the repository
-  owner or `github-actions[bot]` (release-please).
-
-Create the label once:
+The equivalent manual commands are:
 
 ```bash
+gh api -X PATCH repos/ghdtmdwns133/<repo> \
+  -F allow_auto_merge=true -F delete_branch_on_merge=true
+gh api -X PUT repos/ghdtmdwns133/<repo>/actions/permissions/artifact-and-log-retention \
+  -F days=14
+gh api -X PUT repos/ghdtmdwns133/<repo>/actions/permissions/workflow \
+  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
+gh api -X PUT repos/ghdtmdwns133/<repo>/vulnerability-alerts
 gh label create automerge --color 0e8a16 --description "Merge when required checks pass"
+gh label create ci-alert --color b60205 --description "Platform verification failure"
 ```
 
-Merging still depends on the ruleset's required checks; the workflow only
-enables auto-merge.
+`can_approve_pull_request_reviews=true` is required so release-please can open
+its Release PR with `GITHUB_TOKEN`. The default workflow permission stays
+read-only.
 
-Dependabot nuance: runs triggered by Dependabot pull requests receive a
-read-only `GITHUB_TOKEN` and no secrets unless the workflow declares
-permissions, and GitHub may still downgrade the token for Dependabot events.
-When `gh pr merge --auto` fails, the step reports a warning and leaves the pull
-request for manual merge.
+## Renovate
+
+Generated repositories contain:
+
+```json
+{ "extends": ["github>ghdtmdwns133/dev-platform"] }
+```
+
+The policy lives in [`default.json`](../default.json): `config:recommended`,
+platform auto-merge, auto-merge for minor/patch/digest updates, digest pinning
+for GitHub Actions, weekly lock-file maintenance, and grouped Copier updates.
+
+**Installation is a user authorization step.** Install or authorize the Mend
+Renovate app for the account at <https://github.com/apps/renovate>, granting the
+repositories that should receive PRs. There is no repository evidence that it is
+installed: on 2026-10-24,
+`gh search prs --owner ghdtmdwns133 --app renovate` returned no results. Until
+it is installed, no Renovate PR exists and no dependency auto-merge happens.
+Do not treat this document as proof of an active installation.
+
+Once installed, a repository with `renovate.json` on the default branch skips
+the onboarding PR and starts receiving update PRs. Renovate uses GitHub's native
+auto-merge (`platformAutomerge`); the repository setting `allow_auto_merge` and
+at least one required status check must exist, or GitHub may merge a PR whose
+checks failed. The `platform-gates` ruleset supplies the checks.
+
+Dependabot version-update configuration has been removed in favour of Renovate.
+Dependabot vulnerability alerts stay enabled. There is no separate auto-merge
+workflow: release-please's Release PR is auto-merged by `release.yml`, and
+Renovate handles dependency PRs.
+
+### Copier updates
+
+Every generated repository has `.copier-answers.yml`. `copier update` applies
+the template delta in place:
+
+```bash
+cd my-service
+uvx copier update --defaults
+```
+
+Renovate's Copier manager detects `.copier-answers*.yml`, treats the template
+source as a `git-tags` dependency and uses PEP 440 versioning
+(<https://docs.renovatebot.com/modules/manager/copier/>). It can open update PRs
+only when all of these hold:
+
+- the hosted Renovate app is installed and has access to the repository;
+- the template is referenced as a git source, not a local path; and
+- the platform publishes PEP 440 git tags (`v1.N.0`), not only the moving `v1`
+  tag.
+
+The template contains no dangerous Copier features (`_tasks`, Jinja extensions
+or migrations) precisely so the hosted app does not need script permission.
+Installation and tagging are still prerequisites; if no update PR appears, run
+`copier update` locally. Do not promise automatic Copier PRs before the app and
+the semver tags exist.
 
 ## Release automation
 
-Each template contains `release-please-config.json` and
-`.release-please-manifest.json` (initial version `0.0.0`). The caller
-`.github/workflows/release.yml` runs on pushes to `main` and calls the shared
-release workflow.
+Generated repositories (except `other`) contain `release-please-config.json`
+and `.release-please-manifest.json`. The caller `release.yml` runs on pushes to
+`main`, a daily schedule, and manual dispatch. It asks release-please to open or
+update the Release PR, labels it `automerge`, and enables GitHub auto-merge with
+`gh pr merge --auto --squash`. Merging the Release PR creates the tag. Because a
+tag created with `GITHUB_TOKEN` does not trigger another workflow, the same run
+builds the tagged tree and attaches the assets.
 
-The shared workflow runs release-please, labels its Release PR `automerge`,
-enables auto-merge on it, and when `release_created` is true, builds and uploads
-the assets in the same workflow. Tags created with `GITHUB_TOKEN` do not trigger
-other workflows, so the assets are built in the same run.
-
-`GITHUB_TOKEN`-authored pull requests also do not trigger `pull_request`
-workflows, so their required checks never appear by themselves. While the
-Release PR is open, the workflow dispatches the caller CI on the Release PR
-branch:
-
-```bash
-gh workflow run ci.yml --ref <release-pr-branch>
-```
-
-`workflow_dispatch` is allowed with `GITHUB_TOKEN`, and the resulting check runs
-attach to the head SHA, satisfying the ruleset. The workflow file name is the
-`ci-workflow` input (default `ci.yml`); the caller workflow must declare
-`workflow_dispatch`. The release job needs `actions: write` and the template
-caller grants it. No personal access token is required.
-
-The repository setting `can_approve_pull_request_reviews=true` is required for
-release-please to create the Release PR with `GITHUB_TOKEN`; the integration
-owner sets it.
-
-The build job runs on `runs-on`, a JSON string of runner labels
-(default `'"ubuntu-latest"'`). Unity repositories can pass
-`'["self-hosted","windows","unity"]'` and use a PowerShell build command.
-
-### Completing a release without a human push
-
-The template callers also trigger on `workflow_run` for the `CI` workflow, a
-daily schedule (`23 4 * * *`) and `workflow_dispatch`. The push run creates or
-updates the Release PR, labels it `automerge`, enables auto-merge and dispatches
-CI on the Release PR branch. A Release PR created with `GITHUB_TOKEN` lands its
-pull-request CI run in `action_required`, so the release job approves that run
-(`actions: write`) and then waits up to 15 minutes for auto-merge to merge the
-PR. After the merge it checks out the updated default branch and runs
-release-please a second time, so `release_created` becomes true in the same
-workflow run and the build/publish jobs attach the assets. The build jobs check
-out the release tag, not the triggering commit, so the artifact version always
-matches the tag.
-
-The `workflow_run` path remains for CI runs started by a trusted actor (for
-example a manual re-run): it merges the Release PR with `gh pr merge --squash
---match-head-commit <sha>`, or observes that auto-merge already merged it, then
-runs release-please on the default branch. GitHub suppresses `workflow_run`
-after runs created by `GITHUB_TOKEN`, which is why the push run performs the
-approval and wait itself instead of relying on that trigger alone.
-
-Safety: the `workflow_run` job never checks out the upstream head branch and
-never executes code from it. It only calls `gh` APIs, merges a PR whose branch
-starts with `release-please--`, re-checks out the default branch and runs
-release-please. The inline `zizmor: ignore[dangerous-triggers]` comment in the
-caller documents this. Release-please is idempotent on existing tags, so a later
-schedule or human push cannot create a duplicate release.
+A Release PR created with `GITHUB_TOKEN` also starts its `pull_request` checks
+in `action_required`. The workflow dispatches the caller CI on the Release PR
+branch, approves the pending run (it needs `actions: write`), and waits up to
+`merge-wait-minutes` (default 15) for auto-merge. If the wait expires, the run
+ends with a notice; the next push or schedule can finish the release. The
+workflow file is the source of truth for the exact inputs and the
+`rebuild-tag` recovery path.
 
 ## Failure issues
 
 On failure, the `notify` action creates an issue labeled `ci-alert` or comments
-on the open issue with the same title, and records the workflow, job, commit,
-run URL, failed step and the exact local repro command
-(`devctl verify --profile <p>`). Quality, nightly and Unity workflows pass the
-profile they ran; the security workflow does not run a `devctl verify` profile.
+on the open issue with the same title. The body records the workflow, job,
+commit, run URL, failed step and the local repro command. Non-Unity repositories
+reproduce with `mise run check` / `mise run test`; Unity reproduces with
+`devctl verify --profile unity`. The security workflow has no `devctl` profile
+and reports the scanner that failed.
+
+## Platform refs and tag record
+
+Consumers reference tags:
+`ghdtmdwns133/dev-platform/.github/workflows/<file>@v1` and
+`/actions/<name>@v1`. Third-party actions inside the platform are pinned to
+commit SHAs with the human-readable tag in a trailing comment.
+
+Two tag families have different jobs:
+
+- `v1` — moving tag used by caller workflows and `platform_ref`.
+- `v1.N.0` — immutable PEP 440 tags used by Copier and Renovate for template
+  updates.
+
+The integration owner creates and moves these tags; no slice does. Record the
+SHA when a tag is created or moved, and keep the table current:
+
+| Tag | Commit SHA | Date | Notes |
+| --- | ---------- | ---- | ----- |
+| `v1` | record at release | — | moving; callers resolve it |
+| `v1.N.0` | record at release | — | immutable template version |
+
+Every consumer must use a `v1` or `v1.N.0` whose workflows, template and CLI are
+consistent. Do not move `v1` to a red commit.
 
 ## Secrets and services
 
-See [SECRETS.md](SECRETS.md) for Doppler, Codecov, Sentry and token setup.
+See [SECRETS.md](SECRETS.md) for Doppler, Codecov, Sentry and token handling.
+CodeScene is documented in [CODESCENE.md](CODESCENE.md); installing its GitHub
+App and creating projects remain manual actions.
