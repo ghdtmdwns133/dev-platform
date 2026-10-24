@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf "$SMOKE"
-          uvx copier==9.19.1 copy --trust --defaults \
+          uvx copier==9.19.1 copy --trust --defaults --vcs-ref HEAD \
             --data project_name=smoke \
             --data stack="$STACK" \
             --data create_github_repo=false \
@@ -116,7 +116,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf "$SMOKE"
-          uvx copier==9.19.1 copy --trust --defaults \
+          uvx copier==9.19.1 copy --trust --defaults --vcs-ref HEAD \
             --data project_name=smoke \
             --data stack="$STACK" \
             --data create_github_repo=false \
