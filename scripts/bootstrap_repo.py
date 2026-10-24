@@ -269,6 +269,24 @@ def repository_exists(plan: Plan, repo: str) -> bool:
 def ensure_remote_repository(
     args: argparse.Namespace, root: Path, repo: str, plan: Plan
 ) -> bool:
+    if plan.dry_run:
+        plan.run(["gh", "repo", "view", repo, "--json", "name"])
+        if not args.create_repo:
+            print(f"# assume {repo} exists because --no-create-repo was passed")
+            return True
+        plan.run(
+            [
+                "gh",
+                "repo",
+                "create",
+                repo,
+                f"--{args.visibility}",
+                "--source",
+                str(root),
+                "--push",
+            ]
+        )
+        return True
     if repository_exists(plan, repo):
         log(f"repository exists: {repo}")
         return True
