@@ -36,7 +36,7 @@ run = "pre-commit run --all-files"
 [tasks.test]
 run = [
   "npm ci --no-audit --no-fund",
-  "npx vitest run --coverage",
+  "npx vitest run --coverage.enabled --coverage.thresholds.lines={{ min_coverage }}",
 ]
 
 [tasks.build]
@@ -54,7 +54,7 @@ depends = ["prepare"]
 run = "pre-commit run --all-files"
 
 [tasks.test]
-run = "dotnet test DevFlow.slnx --collect:\"XPlat Code Coverage\" --results-directory coverage"
+run = "dotnet test DevFlow.slnx -p:CollectCoverage=true -p:CoverletOutputFormat=cobertura -p:CoverletOutput=../../coverage/coverage.cobertura.xml -p:Threshold={{ min_coverage }} -p:ThresholdType=line -p:ThresholdStat=total"
 
 [tasks.build]
 run = "dotnet pack DevFlow.slnx -c Release -o dist"
