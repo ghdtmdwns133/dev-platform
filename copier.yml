@@ -41,7 +41,9 @@ min_coverage:
 
 create_github_repo:
   type: bool
-  help: Create the GitHub repository and apply its settings after rendering.
+  help: >-
+    Recorded for bootstrap compatibility. A direct Copier render is offline and
+    does not create or configure the GitHub repository.
   default: true
 
 enable_codecov:
