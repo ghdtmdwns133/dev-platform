@@ -10,11 +10,11 @@ repos:
       - id: check-yaml
       - id: end-of-file-fixer
 {% if stack == 'unity' %}
-        exclude: '\.(unity|prefab|asset|mat|controller|overrideController|inputactions|playable|anim)$'
+        exclude: '\.(unity|prefab|asset|mat|controller|overrideController|inputactions|playable|anim|meta)$'
 {% endif %}
       - id: trailing-whitespace
 {% if stack == 'unity' %}
-        exclude: '\.(unity|prefab|asset|mat|controller|overrideController|inputactions|playable|anim)$'
+        exclude: '\.(unity|prefab|asset|mat|controller|overrideController|inputactions|playable|anim|meta)$'
 {% endif %}
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
