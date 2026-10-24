@@ -1,0 +1,12 @@
+{% set release_type = 'python' if stack == 'python' else ('node' if stack == 'typescript' else 'simple') -%}
+{
+  "release-type": "{{ release_type }}",
+  "always-update": true,
+  "packages": {
+    ".": {
+      "release-type": "{{ release_type }}",
+      "package-name": "{{ project_name | lower | replace(' ', '-') }}"{% if stack == 'dotnet' or stack == 'unity' %},
+      "version-file": "version.txt"{% endif %}
+    }
+  }
+}

@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/DevFlow.Core/DevFlow.Core.csproj" />
+  <Project Path="tests/DevFlow.Core.Tests/DevFlow.Core.Tests.csproj" />
+</Solution>

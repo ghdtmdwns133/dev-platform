@@ -1,0 +1,40 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: {% raw %}nightly-${{ github.ref }}{% endraw %}
+  cancel-in-progress: true
+
+jobs:
+  platform-nightly:
+    name: platform-nightly
+    permissions:
+      contents: read
+      issues: write
+{% if stack == 'unity' -%}
+      security-events: write
+      actions: read
+    uses: {{ owner }}/dev-platform/.github/workflows/unity.yml@{{ platform_ref }}
+    with:
+      unity-runner: self-hosted
+      unity-version: "6000.5.1f1"
+      build: true
+      platform-ref: {{ platform_ref }}
+    secrets:
+      UNITY_LICENSE: {% raw %}${{ secrets.UNITY_LICENSE }}{% endraw %}
+      UNITY_EMAIL: {% raw %}${{ secrets.UNITY_EMAIL }}{% endraw %}
+      UNITY_PASSWORD: {% raw %}${{ secrets.UNITY_PASSWORD }}{% endraw %}
+{% else -%}
+    uses: {{ owner }}/dev-platform/.github/workflows/nightly.yml@{{ platform_ref }}
+    with:
+      working-directory: "."
+      enable-codecov: false
+      platform-ref: {{ platform_ref }}
+{% endif %}

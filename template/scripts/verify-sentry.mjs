@@ -1,0 +1,98 @@
+import http from "node:http";
+import process from "node:process";
+import * as Sentry from "@sentry/node";
+
+const PORT = 8969;
+const live = process.argv.includes("--live");
+
+function fail(message) {
+  console.error(message);
+  process.exit(1);
+}
+
+async function runMock() {
+  let received = 0;
+  const server = http.createServer((request, response) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      received += 1;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end("{}");
+    });
+  });
+  await new Promise((resolve) => server.listen(PORT, "127.0.0.1", resolve));
+  Sentry.init({
+    dsn: `http://public@127.0.0.1:${PORT}/1`,
+    environment: "verification",
+    tracesSampleRate: 0,
+  });
+  Sentry.captureException(new Error("dev-platform sentry verification"));
+  await Sentry.flush(5000);
+  await new Promise((resolve) => server.close(resolve));
+  if (received === 0) {
+    fail("no envelope received by the mock server");
+  }
+  console.log(`envelope received (${received})`);
+}
+
+// Sentry's API host follows the data-storage region encoded in the DSN host
+// (e.g. o1.ingest.de.sentry.io -> https://de.sentry.io).
+function sentryApiBase(dsn) {
+  const host = new URL(dsn).hostname;
+  const region = host.match(/\.ingest\.([a-z]{2})\.sentry\.io$/);
+  return region ? `https://${region[1]}.sentry.io` : "https://sentry.io";
+}
+
+async function runLive() {
+  const dsn = process.env.SENTRY_DSN;
+  const token = process.env.SENTRY_AUTH_TOKEN;
+  const org = process.env.SENTRY_ORG;
+  const project = process.env.SENTRY_PROJECT;
+  if (!dsn || !token || !org || !project) {
+    console.error(
+      "SENTRY_DSN, SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECT are required for --live",
+    );
+    process.exit(2);
+  }
+  Sentry.init({
+    dsn,
+    environment: "verification",
+    release: process.env.VITE_SENTRY_RELEASE ?? "verify-sentry",
+    tracesSampleRate: 0,
+  });
+  const eventId = Sentry.captureException(
+    new Error(`dev-platform sentry verification ${new Date().toISOString()}`),
+  );
+  const flushed = await Sentry.flush(10000);
+  if (!flushed) {
+    fail("Sentry flush timed out");
+  }
+  // Events become queryable only after Sentry finishes processing them, so a
+  // 404 right after sending is expected; retry for up to ~2 minutes.
+  const apiBase = process.env.SENTRY_URL ?? sentryApiBase(dsn);
+  const url = `${apiBase}/api/0/projects/${org}/${project}/events/${eventId}/`;
+  let status = 0;
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    status = response.status;
+    if (status === 200 || status !== 404) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+  if (status !== 200) {
+    fail(`Sentry event lookup failed with status ${status}`);
+  }
+  console.log(`event id ${eventId}`);
+}
+
+try {
+  if (live) {
+    await runLive();
+  } else {
+    await runMock();
+  }
+} finally {
+  await Sentry.close();
+}

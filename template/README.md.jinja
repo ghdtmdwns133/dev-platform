@@ -1,0 +1,74 @@
+# {{ project_name }}
+
+{% if stack == 'python' -%}
+Python project generated from [dev-platform](https://github.com/{{ owner }}/dev-platform) with Copier. The sample package computes the critical path of a stage dependency graph.
+{% elif stack == 'typescript' -%}
+React, Vite and Sentry project generated from [dev-platform](https://github.com/{{ owner }}/dev-platform) with Copier.
+{% elif stack == 'dotnet' -%}
+.NET solution generated from [dev-platform](https://github.com/{{ owner }}/dev-platform) with Copier. The sample library computes the critical path of a stage dependency graph.
+{% elif stack == 'unity' -%}
+Unity project layer generated from [dev-platform](https://github.com/{{ owner }}/dev-platform) with Copier. It is not a complete Unity project: copy these files into a Unity repository at the root, then adjust `.devplatform/config.json`.
+{% else -%}
+Repository generated from [dev-platform](https://github.com/{{ owner }}/dev-platform) with Copier. It carries only the stack-agnostic platform layer.
+{% endif %}
+
+## Local workflow
+
+```bash
+mise trust
+mise install
+mise run check
+{% if stack == 'python' or stack == 'typescript' or stack == 'dotnet' -%}
+mise run test
+{% endif -%}
+```
+
+`mise run check` runs `pre-commit run --all-files`, the same hook configuration CI uses. It installs the toolchains declared in `mise.toml` first.
+
+{% if stack == 'python' -%}
+`mise run test` runs pytest and writes `coverage/coverage.xml`.
+{% elif stack == 'typescript' -%}
+`mise run test` runs Vitest with coverage and writes `coverage/coverage-final.json` and `coverage/lcov.info`.
+{% elif stack == 'dotnet' -%}
+`mise run test` runs `dotnet test` and writes Cobertura coverage under `coverage/`.
+{% elif stack == 'unity' -%}
+Unity integrity checks do not need the editor:
+
+```bash
+uvx --from git+https://github.com/{{ owner }}/dev-platform@{{ platform_ref }}#subdirectory=cli devctl unity integrity
+```
+
+Full Unity verification runs on the repository's self-hosted runner.
+{% endif %}
+
+## Continuous integration
+
+`.github/workflows/ci.yml` calls the shared platform workflows at `{{ platform_ref }}`. It also runs on pull requests, so the required checks are the same for humans and automation.
+
+{% if stack == 'unity' -%}
+Required checks are `platform-verify / integrity`, `platform-verify / tests` and `platform-security / scan`. Unity tests run only on a runner labeled `[self-hosted, windows, unity]`.
+{% else -%}
+Required checks are `platform-verify / check`, {% if stack != 'other' %}`platform-verify / test` and {% endif %}`platform-security / scan`.
+{% endif %}
+
+## Dependency updates
+
+Renovate reads `renovate.json` and extends the shared preset `github>{{ owner }}/dev-platform`. It pins GitHub Actions to commit digests, groups template updates and automerges minor, patch and digest updates after the required checks pass.
+
+## Releases
+
+{% if stack == 'other' -%}
+Releases are not configured for this stack-agnostic profile.
+{% else -%}
+Conventional commits drive release-please. Merging a Release PR creates the tag; `.github/workflows/release.yml` builds the artifact and attaches it to the release.
+{% endif %}
+
+## Template updates
+
+The Copier answers file records the template version. Update the platform layer with:
+
+```bash
+uvx copier update --defaults
+```
+
+Review the resulting diff before committing. Application source, dependencies and the README are project-owned and are not overwritten by template updates.

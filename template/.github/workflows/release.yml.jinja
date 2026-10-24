@@ -1,0 +1,66 @@
+{% set release_type = 'python' if stack == 'python' else ('node' if stack == 'typescript' else 'simple') -%}
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_run: # zizmor: ignore[dangerous-triggers] only merges the trusted release PR via gh API; no untrusted checkout
+    workflows: ["CI"]
+    types: [completed]
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+    inputs:
+      rebuild-tag:
+        description: Existing release tag to rebuild and re-attach assets for (empty = normal release flow)
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: {% raw %}release-${{ github.ref }}{% endraw %}
+  cancel-in-progress: false
+
+jobs:
+  platform-release:
+    name: platform-release
+    permissions:
+      actions: write
+      checks: read
+      contents: write
+      issues: write
+      pull-requests: write
+    uses: {{ owner }}/dev-platform/.github/workflows/release.yml@{{ platform_ref }}
+    with:
+      release-type: {{ release_type }}
+      rebuild-tag: {% raw %}${{ github.event_name == 'workflow_dispatch' && inputs.rebuild-tag || '' }}{% endraw %}
+      profile: {{ stack }}
+{% if stack == 'unity' -%}
+      build-command: uvx --from git+https://github.com/{{ owner }}/dev-platform@{{ platform_ref }}#subdirectory=cli devctl unity build; Compress-Archive -Path artifacts/unity-build/* -DestinationPath artifacts/{{ project_name | lower | replace(' ', '-') }}.zip -Force
+      artifact-path: artifacts/*.zip
+      artifact-name: unity-build
+      runs-on: '["self-hosted","windows","unity"]'
+      platform-ref: {{ platform_ref }}
+    secrets:
+      unity_build_api_key: {% raw %}${{ secrets.UNITY_BUILD_API_KEY }}{% endraw %}
+      unity_build_org_id: {% raw %}${{ secrets.UNITY_BUILD_ORG_ID }}{% endraw %}
+      unity_build_project_id: {% raw %}${{ secrets.UNITY_BUILD_PROJECT_ID }}{% endraw %}
+{% elif stack == 'typescript' -%}
+      build-command: npm ci && npm run build && zip -r dist.zip dist
+      artifact-path: dist.zip
+      artifact-name: dist
+      platform-ref: {{ platform_ref }}
+{% elif stack == 'python' -%}
+      build-command: uv build --out-dir dist
+      artifact-path: dist
+      artifact-name: dist
+      platform-ref: {{ platform_ref }}
+{% elif stack == 'dotnet' -%}
+      build-command: dotnet pack DevFlow.slnx -c Release -o dist
+      artifact-path: dist
+      artifact-name: dist
+      platform-ref: {{ platform_ref }}
+{% endif %}

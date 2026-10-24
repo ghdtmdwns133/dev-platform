@@ -1,0 +1,155 @@
+_subdirectory: template
+
+project_name:
+  type: str
+  help: Repository and project name.
+  validator: "{% if not project_name %}A project name is required{% endif %}"
+
+stack:
+  type: str
+  help: Project stack.
+  choices:
+    Python: python
+    TypeScript: typescript
+    .NET: dotnet
+    Unity: unity
+    Other: other
+
+owner:
+  type: str
+  help: GitHub account that owns the generated repository.
+  default: ghdtmdwns133
+  validator: "{% if not owner %}An owner is required{% endif %}"
+
+visibility:
+  type: str
+  help: Repository visibility.
+  default: private
+  choices:
+    Private: private
+    Public: public
+
+platform_ref:
+  type: str
+  help: dev-platform ref used by caller workflows.
+  default: v1
+
+min_coverage:
+  type: int
+  help: Minimum line coverage percentage.
+  default: 80
+
+create_github_repo:
+  type: bool
+  help: Create the GitHub repository and apply its settings after rendering.
+  default: true
+
+enable_codecov:
+  type: bool
+  help: Upload coverage to Codecov when a token is available.
+  default: true
+
+enable_sentry:
+  type: bool
+  help: Create the Sentry project and set its secrets during bootstrap.
+  default: false
+  when: "{{ stack == 'typescript' }}"
+
+_exclude:
+  - |
+    {% if stack != 'python' %}
+    /src/devflow/**
+    /tests/test_pipeline.py
+    /pyproject.toml
+    /uv.lock
+    /.python-version
+    {% endif %}
+  - |
+    {% if stack != 'typescript' %}
+    /src/App.tsx
+    /src/App.test.tsx
+    /src/main.tsx
+    /src/instrument.ts
+    /src/vite-env.d.ts
+    /src/components/**
+    /vite.config.ts
+    /tsconfig.json
+    /eslint.config.js
+    /.prettierrc.json
+    /.prettierignore
+    /index.html
+    /package.json
+    /package-lock.json
+    /scripts/verify-sentry.mjs
+    {% endif %}
+  - |
+    {% if stack != 'dotnet' %}
+    /src/DevFlow.Core/**
+    /tests/DevFlow.Core.Tests/**
+    /DevFlow.slnx
+    /Directory.Build.props
+    /Directory.Packages.props
+    /global.json
+    {% endif %}
+  - |
+    {% if stack != 'unity' %}
+    /Assets/**
+    /.devplatform/config.json
+    /docs/UNITY-ADAPTER.md
+    {% endif %}
+  - |
+    {% if stack != 'dotnet' and stack != 'unity' %}
+    /version.txt
+    {% endif %}
+  - |
+    {% if stack == 'unity' or stack == 'other' %}
+    /.devcontainer/**
+    {% endif %}
+  - |
+    {% if stack == 'other' %}
+    /.github/workflows/nightly.yml
+    /.github/workflows/release.yml
+    /release-please-config.json
+    /.release-please-manifest.json
+    {% endif %}
+  - |
+    {% if _copier_operation == 'update' %}
+    /README.md
+    {% if stack == 'python' %}
+    /src/devflow/**
+    /tests/test_pipeline.py
+    /pyproject.toml
+    /uv.lock
+    /.python-version
+    {% endif %}
+    {% if stack == 'typescript' %}
+    /src/**
+    /index.html
+    /package.json
+    /package-lock.json
+    {% endif %}
+    {% if stack == 'dotnet' %}
+    /src/DevFlow.Core/**
+    /tests/DevFlow.Core.Tests/**
+    /Directory.Packages.props
+    /version.txt
+    {% endif %}
+    {% if stack == 'unity' %}
+    /.devplatform/config.json
+    /version.txt
+    {% endif %}
+    {% endif %}
+
+_message_after_copy: |
+  Rendered {{ project_name }} ({{ stack }}) with the dev-platform template.
+
+  Next steps:
+    1. cd into the generated directory.
+    2. mise trust && mise install
+    3. mise run check
+  {% if create_github_repo %}
+    4. Create the GitHub repository and apply its settings:
+       uv run --script {{ _copier_conf.src_path }}/scripts/bootstrap_repo.py --root . --owner {{ owner }} --name {{ project_name }} --visibility {{ visibility }}{% if enable_sentry %} --enable-sentry{% endif %}
+  {% endif %}
+
+  Renovate keeps the template up to date after the repository is onboarded.

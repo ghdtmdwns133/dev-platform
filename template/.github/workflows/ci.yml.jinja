@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore:
+      - docs/**
+      - "**/*.md"
+  pull_request:
+    paths-ignore:
+      - docs/**
+      - "**/*.md"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: {% raw %}ci-${{ github.ref }}{% endraw %}
+  cancel-in-progress: true
+
+jobs:
+  platform-verify:
+    name: platform-verify
+    permissions:
+      contents: read
+      issues: write
+{% if stack == 'unity' -%}
+    uses: {{ owner }}/dev-platform/.github/workflows/unity.yml@{{ platform_ref }}
+    with:
+      unity-runner: self-hosted
+      unity-version: "6000.5.1f1"
+      platform-ref: {{ platform_ref }}
+    secrets:
+      codecov_token: {% raw %}${{ secrets.CODECOV_TOKEN }}{% endraw %}
+      UNITY_LICENSE: {% raw %}${{ secrets.UNITY_LICENSE }}{% endraw %}
+      UNITY_EMAIL: {% raw %}${{ secrets.UNITY_EMAIL }}{% endraw %}
+      UNITY_PASSWORD: {% raw %}${{ secrets.UNITY_PASSWORD }}{% endraw %}
+{% else -%}
+    uses: {{ owner }}/dev-platform/.github/workflows/ci.yml@{{ platform_ref }}
+    with:
+      run-tests: {{ 'false' if stack == 'other' else 'true' }}
+      enable-codecov: {{ 'true' if enable_codecov else 'false' }}
+      working-directory: "."
+    secrets:
+      codecov_token: {% raw %}${{ secrets.CODECOV_TOKEN }}{% endraw %}
+{% endif %}
+
+  platform-security:
+    name: platform-security
+    permissions:
+      contents: read
+      issues: write
+      security-events: write
+      actions: read
+    uses: {{ owner }}/dev-platform/.github/workflows/security.yml@{{ platform_ref }}
+    with:
+      upload-sarif: {{ 'true' if visibility == 'public' else 'false' }}
+      platform-ref: {{ platform_ref }}

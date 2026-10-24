@@ -1,0 +1,27 @@
+artifacts/
+.venv/
+node_modules/
+bin/
+obj/
+coverage/
+.dev-platform/
+.env
+.env.*
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+dist/
+*.egg-info/
+build/
+TestResults/
+*.trx
+{% if stack == 'unity' -%}
+Library/
+Temp/
+Logs/
+UserSettings/
+*.csproj
+*.sln
+{% endif -%}
