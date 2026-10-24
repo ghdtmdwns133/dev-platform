@@ -95,8 +95,8 @@ uv run --project C:/dev/dev-platform/cli devctl verify --profile unity
 | 스택 | 명령 | 산출물 |
 | --- | --- | --- |
 | `python` | `mise run check`, `mise run test` | `coverage/coverage.xml`, `dist/`(빌드) |
-| `typescript` | `mise run check`, `mise run test` | `coverage/lcov.info` 등, `dist/` |
-| `dotnet` | `mise run check`, `mise run test` | `coverage/` 아래 cobertura, `dist/` |
+| `typescript` | `mise run check`, `mise run test` | `coverage/coverage-final.json`, `coverage/lcov.info`, `dist/` |
+| `dotnet` | `mise run check`, `mise run test` | `coverage/coverage.cobertura.xml`, `dist/` |
 | `unity` | `devctl verify --profile unity` | `artifacts/reports/unity/` |
 | `unity-assets` | `devctl verify --profile unity-assets` | `artifacts/reports/unity-assets/` |
 | `other` | `mise run check` | — |

@@ -99,8 +99,8 @@ log in to Doppler. Those remain external account actions; see
 | Stack        | Local check (same command in CI)              | Test output                          | Build output |
 | ------------ | --------------------------------------------- | ------------------------------------ | ------------ |
 | `python`     | `mise run check` → `mise run test`            | `coverage/coverage.xml`              | `dist/`      |
-| `typescript` | `mise run check` → `mise run test`            | `coverage/` (lcov + JSON)            | `dist/`      |
-| `dotnet`     | `mise run check` → `mise run test`            | cobertura under `coverage/`          | `dist/`      |
+| `typescript` | `mise run check` → `mise run test`            | `coverage/coverage-final.json` + `coverage/lcov.info` | `dist/` |
+| `dotnet`     | `mise run check` → `mise run test`            | `coverage/coverage.cobertura.xml`    | `dist/`      |
 | `unity`      | `mise run check` (pre-commit, incl. integrity) and `devctl verify --profile unity` | Unity NUnit3 XML and coverage report | Unity build via `unity.yml` |
 | `other`      | `mise run check`                              | —                                    | —            |
 

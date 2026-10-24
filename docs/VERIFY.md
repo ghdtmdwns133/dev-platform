@@ -17,9 +17,14 @@ TypeScript and .NET also define `prepare` and `check` depends on it. `check`
 runs `pre-commit run --all-files` against the repository's
 `.pre-commit-config.yaml`; the same file is used by the pre-commit install and
 by CI. `test` writes its native coverage report under `coverage/`, which CI
-uploads as an artifact. `build` writes the release artifact under `dist/`.
-`test` and `build` are absent for `other`; Unity has no `test` task because its
-test execution belongs to `unity.yml` and `devctl`.
+uploads as an artifact: Python `coverage/coverage.xml`, TypeScript
+`coverage/coverage-final.json` + `coverage/lcov.info`, and .NET
+`coverage/coverage.cobertura.xml`. .NET uses `coverlet.msbuild` 10.1.0 with the
+line-total threshold; TypeScript passes
+`--coverage.thresholds.lines=<min>` while `vite.config.ts` keeps its defaults
+(lines/functions/statements 80, branches 70). `build` writes the release
+artifact under `dist/`. `test` and `build` are absent for `other`; Unity has no
+`test` task because its test execution belongs to `unity.yml` and `devctl`.
 
 `scripts/bootstrap_repo.py` already runs `mise trust`, `mise install`,
 `mise run prepare` (when defined), and `mise exec -- pre-commit install` for a
