@@ -5,7 +5,7 @@ consumer repository fails immediately instead of silently falling back to a
 default.  Only ``profile`` is required when the file exists; every other value has
 a documented default.  When the file does not exist at all, defaults are used and
 the profile is ``None`` (useful for platform repositories such as dev-platform
-itself, which only run ``devctl versions``).
+itself, which only run ``devctl summary``).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from typing import Any
 
 from .errors import EXIT_PRECONDITION, DevctlError
 
-PROFILES = ("unity", "python", "typescript", "dotnet", "unity-assets")
+PROFILES = ("unity", "unity-assets")
 
 #: Defaults documented in the platform specification.  Consumer repositories
 #: override these through ``.devplatform/config.json``.

@@ -46,6 +46,8 @@ from .errors import EXIT_EXECUTION, EXIT_PRECONDITION, EXIT_REQUIRED_FEATURE, De
 Runner = Callable[..., procs.Result]
 EDITOR_CANDIDATE_ROOTS = ("C:/Program Files/Unity/Hub/Editor",)
 MIN_BUILD_BYTES = 1024 * 1024
+#: codecov-cli version installed through ``uvx`` by ``devctl unity coverage-upload``.
+CODECOV_CLI_VERSION = "11.3.1"
 
 
 @dataclass
@@ -821,14 +823,11 @@ def local_upload_target(root: Path) -> tuple[str, str, None]:
 def coverage_upload(
     root: Path,
     reports_dir: Path,
-    platform_home: Path,
     runner: Runner = procs.run,
     profile: str = "unity",
     token: str | None = None,
 ) -> UnityStep:
     """Upload all Unity OpenCover reports to Codecov with the single ``unity`` flag."""
-    from .versions import load_versions
-
     root = Path(root)
     reports_dir = Path(reports_dir)
     reports = opencover_reports(reports_dir)
@@ -840,16 +839,13 @@ def coverage_upload(
     target = github_actions_target()
     sha, branch, pull_request = target if target is not None else local_upload_target(root)
     slug = github_slug(root)
-    version = load_versions(Path(platform_home)).get("tools", {}).get("codecovCli")
-    if not version:
-        raise DevctlError(EXIT_PRECONDITION, "tools.codecovCli missing from versions.json")
 
     argv = [
         "uvx",
         "--python",
         "3.12",
         "--from",
-        f"codecov-cli=={version}",
+        f"codecov-cli=={CODECOV_CLI_VERSION}",
         "codecovcli",
         "upload-process",
         "--git-service",

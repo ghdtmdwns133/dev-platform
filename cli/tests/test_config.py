@@ -39,7 +39,7 @@ def _write(tmp_path: Path, data: dict) -> Path:
 
 
 def test_unknown_top_level_key_rejected(tmp_path: Path) -> None:
-    _write(tmp_path, {"profile": "python", "profiles": "typo"})
+    _write(tmp_path, {"profile": "unity", "profiles": "typo"})
     with pytest.raises(DevctlError) as excinfo:
         load_config(tmp_path)
     assert excinfo.value.code == 2
@@ -67,23 +67,10 @@ def test_missing_profile_when_file_exists(tmp_path: Path) -> None:
     assert "profile is required" in excinfo.value.message
 
 
-def test_profile_mismatch(tmp_path: Path) -> None:
-    _write(tmp_path, {"profile": "python"})
-    with pytest.raises(DevctlError) as excinfo:
-        load_config(tmp_path, cli_profile="typescript")
-    assert excinfo.value.code == 2
-    assert "profile mismatch" in excinfo.value.message
-
-
 def test_unity_assets_is_compatible_with_unity_config(tmp_path: Path) -> None:
     _write(tmp_path, {"profile": "unity"})
     config = load_config(tmp_path, cli_profile="unity-assets")
     assert config.profile == "unity"
-
-    with pytest.raises(DevctlError) as excinfo:
-        load_config(tmp_path, cli_profile="python")
-    assert excinfo.value.code == 2
-    assert "profile mismatch" in excinfo.value.message
 
 
 def test_unity_is_not_compatible_with_unity_assets_config(tmp_path: Path) -> None:
@@ -123,7 +110,7 @@ def test_required_objects_validation(tmp_path: Path) -> None:
 
 
 def test_coverage_bounds(tmp_path: Path) -> None:
-    _write(tmp_path, {"profile": "python", "coverage": {"minimum": 101}})
+    _write(tmp_path, {"profile": "unity", "coverage": {"minimum": 101}})
     with pytest.raises(DevctlError):
         load_config(tmp_path)
 

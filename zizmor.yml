@@ -1,4 +1,9 @@
+# zizmor configuration. The `self-repository` audit recommends GitHub's `$/...`
+# same-repository syntax, but actionlint (1.7.12, the newest release) rejects it,
+# so `./...` stays: it is the syntax both tools and GitHub accept today.
 rules:
+  self-repository:
+    disable: true
   unpinned-uses:
     config:
       policies:

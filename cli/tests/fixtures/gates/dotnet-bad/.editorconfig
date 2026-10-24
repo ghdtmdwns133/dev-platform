@@ -1,7 +1,0 @@
-root = true
-
-[*.cs]
-indent_style = space
-indent_size = 4
-dotnet_diagnostic.CA2007.severity = warning
-dotnet_diagnostic.CA1848.severity = warning

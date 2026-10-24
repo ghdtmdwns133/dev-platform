@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  workflow_call:
+    inputs:
+      run-tests:
+        description: Run the mise test task and publish the coverage artifact.
+        required: false
+        default: true
+        type: boolean
+      enable-codecov:
+        description: Upload coverage to Codecov when the codecov_token secret is present.
+        required: false
+        default: false
+        type: boolean
+      working-directory:
+        description: Project directory relative to the repository root.
+        required: false
+        default: "."
+        type: string
+    secrets:
+      codecov_token:
+        description: Codecov upload token.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install tools from mise.toml
+        uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+        with:
+          working_directory: ${{ inputs.working-directory }}
+      - name: Run the check task
+        run: mise run check
+
+  test:
+    name: test
+    if: ${{ inputs.run-tests }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      CODECOV_TOKEN: ${{ secrets.codecov_token }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install tools from mise.toml
+        uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
+        with:
+          working_directory: ${{ inputs.working-directory }}
+      - name: Run the test task
+        run: mise run test
+      - name: Warn about a missing Codecov token
+        if: ${{ inputs.enable-codecov && env.CODECOV_TOKEN == '' }}
+        run: echo "::warning::Codecov enabled but the codecov_token secret is missing"
+      - name: Note the skipped Codecov upload
+        if: ${{ !inputs.enable-codecov }}
+        run: echo "::notice::Codecov skipped (enable-codecov is false)"
+      - name: Upload coverage to Codecov
+        if: ${{ inputs.enable-codecov && env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7
+        with:
+          token: ${{ env.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage
+          path: ${{ inputs.working-directory }}/coverage
+          if-no-files-found: warn
+          retention-days: 14
+
+  notify:
+    name: notify
+    needs: [check, test]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open or update the failure issue
+        uses: ghdtmdwns133/dev-platform/actions/notify@v1
+        with:
+          status: ci job failed
+          title: "CI failure: ${{ github.workflow }}"
+          label: ci-alert

@@ -1,19 +1,14 @@
-"""Summary reporting: ``summary.json``, ``summary.md`` and test/coverage parsing."""
+"""Summary reporting: ``summary.json``, ``summary.md`` and step records."""
 
 from __future__ import annotations
 
 import json
 import os
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-from .errors import EXIT_EXECUTION, EXIT_PRECONDITION, DevctlError
+from .errors import EXIT_PRECONDITION, DevctlError
 from .procs import display_path
-
-
-def _path_text(value: Path | str | None) -> str | None:
-    return str(value) if value is not None else None
 
 
 def render_markdown(data: dict[str, Any]) -> str:
@@ -85,72 +80,6 @@ def print_summaries(reports_dir: Path) -> None:
             print()
         print(f"<!-- {path.parent.name} -->")
         print(path.read_text(encoding="utf-8").rstrip())
-
-
-def cobertura_line_rate(path: Path) -> float | None:
-    """Read ``line-rate`` from a Cobertura coverage file (0..1 scaled to 0..100)."""
-    try:
-        root = ET.parse(path).getroot()
-    except (OSError, ET.ParseError) as exc:
-        raise DevctlError(EXIT_EXECUTION, f"could not parse {path}: {exc}") from exc
-    raw = root.get("line-rate")
-    if raw is None:
-        return None
-    try:
-        return round(float(raw) * 100.0, 2)
-    except ValueError:
-        return None
-
-
-def junit_counts(path: Path) -> dict[str, int]:
-    """Read aggregate counts from a JUnit XML file."""
-    try:
-        root = ET.parse(path).getroot()
-    except (OSError, ET.ParseError):
-        return {"passed": 0, "failed": 0, "skipped": 0}
-    suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
-    if not suites:
-        suites = [root]
-    total = failures = errors = skipped = 0
-    for suite in suites:
-        try:
-            total += int(suite.get("tests", "0"))
-            failures += int(suite.get("failures", "0"))
-            errors += int(suite.get("errors", "0"))
-            skipped += int(suite.get("skipped", "0"))
-        except ValueError:
-            continue
-    failed = failures + errors
-    return {
-        "passed": max(total - failed - skipped, 0),
-        "failed": failed,
-        "skipped": skipped,
-    }
-
-
-def trx_counts(path: Path) -> dict[str, int]:
-    """Read aggregate counts from a VSTest ``.trx`` result file."""
-    try:
-        root = ET.parse(path).getroot()
-    except (OSError, ET.ParseError):
-        return {"passed": 0, "failed": 0, "skipped": 0}
-    for element in root.iter():
-        if not isinstance(element.tag, str):
-            continue
-        if element.tag.rsplit("}", 1)[-1] != "Counters":
-            continue
-        try:
-            total = int(element.get("total", "0"))
-            passed = int(element.get("passed", "0"))
-            failed = int(element.get("failed", "0"))
-        except ValueError:
-            continue
-        return {
-            "passed": passed,
-            "failed": failed,
-            "skipped": max(total - passed - failed, 0),
-        }
-    return {"passed": 0, "failed": 0, "skipped": 0}
 
 
 def artifact_list(reports_dir: Path, profile: str, root: Path) -> list[str]:

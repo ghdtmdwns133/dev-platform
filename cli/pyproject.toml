@@ -22,7 +22,6 @@ dev = ["ruff", "pytest", "pytest-cov"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = ["tests/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
@@ -33,5 +32,5 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["fixtures", "node_modules", ".venv"]
+norecursedirs = [".venv"]
 addopts = "-q"

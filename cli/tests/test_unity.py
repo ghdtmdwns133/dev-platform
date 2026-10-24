@@ -14,8 +14,6 @@ from devplatform import procs, unity
 from devplatform.config import load_config
 from devplatform.errors import DevctlError
 
-PLATFORM_HOME = Path(__file__).resolve().parents[2]
-
 
 def config_for(root: Path, **unity_overrides):
     write_config(root, profile="unity", unity=unity_overrides)
@@ -573,9 +571,7 @@ def test_coverage_upload_builds_codecov_argv(tmp_path: Path, monkeypatch) -> Non
     reports = _upload_tree(tmp_path)
     monkeypatch.setattr(unity, "_git", _fake_git(GIT_OK))
     runner = FakeRunner()
-    step = unity.coverage_upload(
-        tmp_path, reports, PLATFORM_HOME, runner=runner, token="secret-token"
-    )
+    step = unity.coverage_upload(tmp_path, reports, runner=runner, token="secret-token")
     assert step.status == "passed"
     assert len(runner.calls) == 1
     argv = runner.calls[0]["argv"]
@@ -594,20 +590,20 @@ def test_coverage_upload_preconditions(tmp_path: Path, monkeypatch) -> None:
     reports = _upload_tree(tmp_path)
     monkeypatch.setattr(unity, "_git", _fake_git(GIT_OK))
     with pytest.raises(DevctlError) as excinfo:
-        unity.coverage_upload(tmp_path, reports, PLATFORM_HOME, runner=FakeRunner(), token="")
+        unity.coverage_upload(tmp_path, reports, runner=FakeRunner(), token="")
     assert excinfo.value.code == 2
     assert "CODECOV_TOKEN" in excinfo.value.message
 
     empty = tmp_path / "empty-reports"
     with pytest.raises(DevctlError) as excinfo:
-        unity.coverage_upload(tmp_path, empty, PLATFORM_HOME, runner=FakeRunner(), token="t")
+        unity.coverage_upload(tmp_path, empty, runner=FakeRunner(), token="t")
     assert "no Unity OpenCover report found" in excinfo.value.message
 
     dirty = dict(GIT_OK)
     dirty[("status", "--porcelain")] = (0, " M file.txt", "")
     monkeypatch.setattr(unity, "_git", _fake_git(dirty))
     with pytest.raises(DevctlError) as excinfo:
-        unity.coverage_upload(tmp_path, reports, PLATFORM_HOME, runner=FakeRunner(), token="t")
+        unity.coverage_upload(tmp_path, reports, runner=FakeRunner(), token="t")
     assert excinfo.value.code == 2
     assert "commit must be pushed" in excinfo.value.message
 
@@ -623,7 +619,7 @@ def test_coverage_upload_uses_github_actions_context(tmp_path: Path, monkeypatch
     monkeypatch.setattr(unity, "_git", _fake_git(mapping))
     reports = _upload_tree(tmp_path)
     runner = FakeRunner()
-    step = unity.coverage_upload(tmp_path, reports, PLATFORM_HOME, runner=runner, token="t")
+    step = unity.coverage_upload(tmp_path, reports, runner=runner, token="t")
     assert step.status == "passed"
     argv = runner.calls[0]["argv"]
     assert argv[argv.index("--sha") + 1] == "0123456789abcdef0123456789abcdef01234567"
@@ -642,7 +638,7 @@ def test_coverage_upload_github_pull_request(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr(unity, "_git", _fake_git(mapping))
     reports = _upload_tree(tmp_path)
     runner = FakeRunner()
-    unity.coverage_upload(tmp_path, reports, PLATFORM_HOME, runner=runner, token="t")
+    unity.coverage_upload(tmp_path, reports, runner=runner, token="t")
     argv = runner.calls[0]["argv"]
     assert argv[argv.index("--branch") + 1] == "feature/coverage"
     assert argv[argv.index("--pr") + 1] == "42"
@@ -656,7 +652,7 @@ def test_coverage_upload_falls_back_to_local_without_github_sha(
     monkeypatch.setattr(unity, "_git", _fake_git(GIT_OK))
     reports = _upload_tree(tmp_path)
     runner = FakeRunner()
-    unity.coverage_upload(tmp_path, reports, PLATFORM_HOME, runner=runner, token="t")
+    unity.coverage_upload(tmp_path, reports, runner=runner, token="t")
     argv = runner.calls[0]["argv"]
     assert argv[argv.index("--sha") + 1] == "abc123"
     assert argv[argv.index("--branch") + 1] == "main"

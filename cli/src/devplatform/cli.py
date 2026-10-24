@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
-from . import cloudbuild, hooks, initcmd, integrity, procs, report, unity, verify, versions
+from . import cloudbuild, integrity, procs, report, unity, verify
 from .config import PROFILES, load_config, reports_directory
 from .errors import EXIT_EXECUTION, DevctlError
 
@@ -16,7 +15,6 @@ def _add_global(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--root", default=argparse.SUPPRESS, help="repository root (default: cwd)")
     parser.add_argument("--reports", default=argparse.SUPPRESS, help="reports directory")
     parser.add_argument("--config", default=argparse.SUPPRESS, help="config file path")
-    parser.add_argument("--platform-home", default=argparse.SUPPRESS, help="dev-platform checkout")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,21 +22,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_global(common)
     parser = argparse.ArgumentParser(
         prog="devctl",
-        description="Single verification command shared by local development and CI",
+        description="Unity verification and execution commands shared by local development and CI",
     )
     _add_global(parser)
     sub = parser.add_subparsers(dest="command", required=True)
-
-    init_parser = sub.add_parser("init", parents=[common], help="render a repository template")
-    init_parser.add_argument("--template", required=True, choices=sorted(initcmd.TEMPLATE_PROFILES))
-    init_parser.add_argument("--name", required=True)
-    init_parser.add_argument("--dest", required=True)
-    init_parser.add_argument("--owner", default="ghdtmdwns133")
-    init_parser.add_argument("--ref", default="v1")
-    init_parser.add_argument("--min-coverage", type=int, default=None)
-    init_parser.add_argument("--enable-codecov", action="store_true")
-    init_parser.add_argument("--private", action="store_true")
-    init_parser.add_argument("--force", action="store_true")
 
     verify_parser = sub.add_parser("verify", parents=[common], help="run the verification gate")
     verify_parser.add_argument("--profile", required=True, choices=list(PROFILES))
@@ -73,32 +60,12 @@ def build_parser() -> argparse.ArgumentParser:
     cloud_parser.add_argument("--timeout-min", type=int, default=None)
     cloud_parser.add_argument("--download", default=None)
 
-    hooks_parser = sub.add_parser("hooks", parents=[common], help="git hook management")
-    hooks_sub = hooks_parser.add_subparsers(dest="hooks_command", required=True)
-    install_parser = hooks_sub.add_parser("install", parents=[common])
-    install_parser.add_argument("--force", action="store_true")
-    hooks_sub.add_parser("pre-commit", parents=[common])
-
-    versions_parser = sub.add_parser(
-        "versions", parents=[common], help="toolchain version contract"
-    )
-    versions_parser.add_argument("--check", action="store_true")
-    versions_parser.add_argument("--profile", choices=list(PROFILES), default=None)
-
     sub.add_parser("summary", parents=[common], help="print generated summaries")
     return parser
 
 
 def _root(args: argparse.Namespace) -> Path:
     return Path(getattr(args, "root", None) or Path.cwd()).resolve()
-
-
-def _platform_home(args: argparse.Namespace) -> Path:
-    value = getattr(args, "platform_home", None) or os.environ.get("DEVPLATFORM_HOME")
-    home = Path(value).expanduser().resolve() if value else Path(__file__).resolve().parents[3]
-    if not home.is_dir():
-        raise DevctlError(2, f"platform home not found: {home}")
-    return home
 
 
 def _config(args: argparse.Namespace, root: Path, profile: str | None = None):
@@ -109,28 +76,8 @@ def _reports(args: argparse.Namespace, root: Path, config) -> Path:
     return reports_directory(root, config, getattr(args, "reports", None))
 
 
-def _profile_for_unity(args: argparse.Namespace, config) -> str:
-    return getattr(args, "profile", None) or config.profile or "unity"
-
-
 def _dispatch(args: argparse.Namespace) -> int:
     root = _root(args)
-    if args.command == "init":
-        platform_home = _platform_home(args)
-        initcmd.init(
-            template=args.template,
-            name=args.name,
-            dest=Path(args.dest),
-            platform_home=platform_home,
-            owner=args.owner,
-            ref=args.ref,
-            min_coverage=args.min_coverage,
-            enable_codecov=args.enable_codecov,
-            private=args.private,
-            force=args.force,
-        )
-        return 0
-
     if args.command == "verify":
         config = _config(args, root, args.profile)
         minimum = args.min_coverage if args.min_coverage is not None else config.coverage_minimum
@@ -139,7 +86,6 @@ def _dispatch(args: argparse.Namespace) -> int:
             root,
             _reports(args, root, config),
             config,
-            _platform_home(args),
             minimum,
             unity_build=args.unity_build,
             upload_coverage=args.upload_coverage,
@@ -149,7 +95,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "unity":
         config = _config(args, root)
         reports = _reports(args, root, config)
-        profile = _profile_for_unity(args, config)
+        profile = config.profile or "unity"
         if args.unity_command == "integrity":
             result = integrity.check(root, config, write_baseline_requested=args.write_baseline)
             integrity.print_result(result)
@@ -165,7 +111,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             )
             return 0
         if args.unity_command == "coverage-upload":
-            result = unity.coverage_upload(root, reports, _platform_home(args), profile=profile)
+            result = unity.coverage_upload(root, reports, profile=profile)
             procs.emit_notice(result.detail or "coverage uploaded")
             return result.exit
         if args.unity_command == "cloud-build":
@@ -211,21 +157,6 @@ def _dispatch(args: argparse.Namespace) -> int:
             procs.emit_notice(f"{result.name}: {result.status} ({result.detail})")
             return result.exit
         raise DevctlError(EXIT_EXECUTION, f"unknown unity command: {args.unity_command}")
-
-    if args.command == "hooks":
-        if args.hooks_command == "install":
-            hooks.install_hooks(root, _platform_home(args), force=args.force)
-            return 0
-        config = _config(args, root)
-        return hooks.pre_commit(root, config, _reports(args, root, config))
-
-    if args.command == "versions":
-        config = _config(args, root, args.profile)
-        profile = args.profile or config.profile
-        checks = versions.check_versions(config, profile, root, _platform_home(args))
-        if args.check:
-            return versions.report_checks(checks)
-        return versions.print_table(checks)
 
     if args.command == "summary":
         config = _config(args, root)

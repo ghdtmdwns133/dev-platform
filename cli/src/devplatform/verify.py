@@ -1,9 +1,12 @@
 """The single verification pipeline shared by local development and CI.
 
-``plan()`` is the authoritative step/argv table; ``run_verify()`` executes it,
+``plan()`` is the authoritative step table; ``run_verify()`` executes it,
 aggregates failures (all steps run by default), and writes ``summary.json`` /
 ``summary.md``.  Exit codes follow the shared contract: 0 success, 1 gate failure,
 2 precondition missing, 3 execution failure, 4 required feature absent.
+
+Only the Unity profiles remain: every other stack is verified through its own
+``mise run check`` / ``mise run test`` tasks by the reusable ``ci.yml``.
 """
 
 from __future__ import annotations
@@ -23,32 +26,9 @@ from .errors import EXIT_EXECUTION, EXIT_GATE, EXIT_PRECONDITION, DevctlError
 
 Runner = Callable[..., procs.Result]
 
-#: A step whose prerequisite did not pass is skipped (not failed).  Only names
-#: present in the profile's plan are used, so a profile that omits e.g. EditMode
-#: does not get an unsatisfiable coverage prerequisite.
+#: A step whose prerequisite did not pass is skipped (not failed).
 PREREQUISITES: dict[str, dict[str, list[str]]] = {
-    "python": {
-        "ruff-check": ["uv-sync"],
-        "ruff-format": ["uv-sync"],
-        "pytest": ["uv-sync"],
-        "coverage": ["pytest"],
-    },
-    "typescript": {
-        "tsc": ["npm-ci"],
-        "eslint": ["npm-ci"],
-        "prettier": ["npm-ci"],
-        "vitest": ["npm-ci"],
-        "coverage": ["vitest"],
-    },
-    "dotnet": {
-        "dotnet-build": ["dotnet-restore"],
-        "dotnet-format": ["dotnet-restore"],
-        "dotnet-test": ["dotnet-build"],
-        "coverage": ["dotnet-test"],
-    },
-    "unity": {
-        "unity-coverage": ["unity-editmode"],
-    },
+    "unity": {"unity-coverage": ["unity-editmode"]},
 }
 
 
@@ -56,9 +36,7 @@ PREREQUISITES: dict[str, dict[str, list[str]]] = {
 class Step:
     name: str
     kind: str
-    argv: list[str] = field(default_factory=list)
     platform: str | None = None
-    coverage_kind: str | None = None
     prereq: list[str] = field(default_factory=list)
 
 
@@ -78,103 +56,19 @@ def _reports_step(reports_dir: Path, profile: str, name: str) -> Path:
 
 def plan(
     profile: str,
-    root: Path,
     reports_dir: Path,
     config: Config,
-    min_coverage: int,
     unity_build: bool = False,
     upload_coverage: bool = False,
 ) -> list[Step]:
-    """Return the fixed step table for ``profile`` with resolved argv."""
+    """Return the fixed step table for ``profile``."""
     profile_dir = Path(reports_dir) / profile
     profile_dir.mkdir(parents=True, exist_ok=True)
     steps: list[Step] = []
-    if profile == "python":
-        steps = [
-            Step("uv-sync", "run", ["uv", "sync", "--frozen"]),
-            Step(
-                "ruff-check",
-                "run",
-                ["uv", "run", "--frozen", "ruff", "check", "--output-format=github", "."],
-            ),
-            Step("ruff-format", "run", ["uv", "run", "--frozen", "ruff", "format", "--check", "."]),
-            Step(
-                "pytest",
-                "run",
-                [
-                    "uv",
-                    "run",
-                    "--frozen",
-                    "pytest",
-                    "-q",
-                    f"--junitxml={profile_dir / 'junit.xml'}",
-                    "--cov",
-                    f"--cov-report=xml:{profile_dir / 'coverage.xml'}",
-                    "--cov-report=term-missing",
-                    f"--cov-fail-under={min_coverage}",
-                ],
-            ),
-        ]
-        if config.coverage_enabled:
-            steps.append(Step("coverage", "coverage", coverage_kind="python"))
-    elif profile == "typescript":
-        steps = [
-            Step("npm-ci", "run", ["npm", "ci", "--no-audit", "--no-fund"]),
-            Step("tsc", "run", ["npx", "tsc", "--noEmit"]),
-            Step("eslint", "run", ["npx", "eslint", ".", "--max-warnings=0"]),
-            Step("prettier", "run", ["npx", "prettier", "--check", "."]),
-            Step(
-                "vitest",
-                "run",
-                [
-                    "npx",
-                    "vitest",
-                    "run",
-                    "--coverage",
-                    "--reporter=default",
-                    "--reporter=junit",
-                    f"--outputFile.junit={profile_dir / 'junit.xml'}",
-                ],
-            ),
-        ]
-        if config.coverage_enabled:
-            steps.append(Step("coverage", "coverage", coverage_kind="typescript"))
-    elif profile == "dotnet":
-        steps = [
-            Step("dotnet-restore", "run", ["dotnet", "restore"]),
-            Step("dotnet-build", "run", ["dotnet", "build", "--no-restore", "-warnaserror"]),
-            Step(
-                "dotnet-format",
-                "run",
-                ["dotnet", "format", "--verify-no-changes", "--severity", "warn"],
-            ),
-            Step(
-                "dotnet-test",
-                "run",
-                [
-                    "dotnet",
-                    "test",
-                    "--no-build",
-                    "--collect:XPlat Code Coverage",
-                    "--results-directory",
-                    str(profile_dir),
-                    "--logger",
-                    f"trx;LogFileName={profile_dir / 'test.trx'}",
-                ],
-            ),
-        ]
-        if config.coverage_enabled:
-            steps.append(Step("coverage", "coverage", coverage_kind="dotnet"))
-    elif profile == "unity":
+    if profile == "unity":
         steps = [Step("unity-integrity", "integrity")]
         for platform in config.unity["testPlatforms"]:
-            steps.append(
-                Step(
-                    f"unity-{platform.lower()}",
-                    "unity-test",
-                    platform=platform,
-                )
-            )
+            steps.append(Step(f"unity-{platform.lower()}", "unity-test", platform=platform))
         if config.coverage_enabled:
             steps.append(Step("unity-coverage", "unity-coverage"))
         if unity_build:
@@ -190,8 +84,6 @@ def plan(
     mapping = PREREQUISITES.get(profile, {})
     for step in steps:
         step.prereq = [name for name in mapping.get(step.name, []) if name in names]
-        if step.kind == "run":
-            step.argv = [str(item) for item in step.argv]
     return steps
 
 
@@ -207,52 +99,13 @@ def _record(
     exit_code: int,
     duration: float,
     log: Path | None,
-    root: Path,
     detail: str = "",
 ) -> Outcome:
     return Outcome(step.name, status, exit_code, round(duration, 3), log, detail)
 
 
-def _coverage_value(
-    profile: str, root: Path, reports_dir: Path, kind: str
-) -> tuple[float | None, Path | None]:
-    if kind == "python":
-        path = Path(reports_dir) / "python" / "coverage.xml"
-    elif kind == "typescript":
-        path = Path(root) / "coverage" / "coverage-summary.json"
-    elif kind == "dotnet":
-        candidates = sorted((Path(reports_dir) / "dotnet").rglob("coverage.cobertura.xml"))
-        path = candidates[0] if candidates else None
-    else:  # pragma: no cover - defensive
-        return None, None
-    if path is None or not Path(path).is_file():
-        return None, None
-    if kind == "typescript":
-        try:
-            data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
-            value = data["total"]["lines"]["pct"]
-            return float(value), Path(path)
-        except (OSError, UnicodeError, ValueError, KeyError, TypeError):
-            return None, Path(path)
-    return report.cobertura_line_rate(Path(path)), Path(path)
-
-
-def _coverage_detail(profile: str, value: float, minimum: int) -> str:
+def _coverage_detail(value: float, minimum: int) -> str:
     return f"coverage {value}% (minimum {minimum}%)"
-
-
-def _run_test_counts(profile: str, root: Path, reports_dir: Path) -> dict[str, int]:
-    profile_dir = Path(reports_dir) / profile
-    counts = {"passed": 0, "failed": 0, "skipped": 0}
-    if profile in {"python", "typescript"}:
-        path = profile_dir / "junit.xml"
-        if path.is_file():
-            counts = report.junit_counts(path)
-    elif profile == "dotnet":
-        path = profile_dir / "test.trx"
-        if path.is_file():
-            counts = report.trx_counts(path)
-    return counts
 
 
 def _clear_profile_reports(reports_dir: Path, profile: str, root: Path) -> None:
@@ -283,7 +136,6 @@ def run_verify(
     root: Path,
     reports_dir: Path,
     config: Config,
-    platform_home: Path,
     min_coverage: int,
     unity_build: bool = False,
     upload_coverage: bool = False,
@@ -295,7 +147,7 @@ def run_verify(
     _clear_profile_reports(reports_dir, profile, root)
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
     started = time.monotonic()
-    steps = plan(profile, root, reports_dir, config, min_coverage, unity_build, upload_coverage)
+    steps = plan(profile, reports_dir, config, unity_build, upload_coverage)
     outcomes: list[Outcome] = []
     coverage_record: dict[str, Any] = {
         "line": None,
@@ -329,7 +181,6 @@ def run_verify(
                 0,
                 0.0,
                 log,
-                root,
                 "skipped after failure (--fail-fast)",
             )
             outcomes.append(outcome)
@@ -342,24 +193,13 @@ def run_verify(
         if blocker is not None:
             detail = f"prerequisite {blocker} failed"
             _write_log(log, [detail])
-            outcome = _record(step, procs.STATUS_SKIPPED, 0, 0.0, log, root, detail)
+            outcome = _record(step, procs.STATUS_SKIPPED, 0, 0.0, log, detail)
             outcomes.append(outcome)
             status_by_name[outcome.name] = outcome.status
             continue
         step_started = time.monotonic()
         try:
-            if step.kind == "run":
-                result = runner(step.name, step.argv, root, log)
-                outcome = _record(
-                    step,
-                    result.status,
-                    result.exit,
-                    result.duration_s,
-                    result.log,
-                    root,
-                    result.detail,
-                )
-            elif step.kind == "integrity":
+            if step.kind == "integrity":
                 result = integrity.check(root, config)
                 integrity.print_result(result)
                 lines = [*[f"::warning::{item}" for item in result.warnings], *result.errors]
@@ -371,7 +211,6 @@ def run_verify(
                     1 if result.errors else 0,
                     time.monotonic() - step_started,
                     log,
-                    root,
                     f"{len(result.errors)} violation(s)",
                 )
             elif step.kind == "unity-test":
@@ -385,7 +224,6 @@ def run_verify(
                     result.exit,
                     time.monotonic() - step_started,
                     result.log,
-                    root,
                     result.detail,
                 )
                 for key in ("passed", "failed", "skipped"):
@@ -397,7 +235,7 @@ def run_verify(
                     "line": measured.get("line"),
                     "minimum": min_coverage,
                     "report": (
-                        report.display_path(measured["report"], root)
+                        procs.display_path(measured["report"], root)
                         if measured.get("report")
                         else None
                     ),
@@ -410,7 +248,6 @@ def run_verify(
                         0,
                         time.monotonic() - step_started,
                         log,
-                        root,
                         "coverage report not produced",
                     )
                 elif measured["line"] < min_coverage:
@@ -420,8 +257,7 @@ def run_verify(
                         1,
                         time.monotonic() - step_started,
                         log,
-                        root,
-                        _coverage_detail(profile, measured["line"], min_coverage),
+                        _coverage_detail(measured["line"], min_coverage),
                     )
                 else:
                     outcome = _record(
@@ -430,39 +266,7 @@ def run_verify(
                         0,
                         time.monotonic() - step_started,
                         log,
-                        root,
-                        _coverage_detail(profile, measured["line"], min_coverage),
-                    )
-            elif step.kind == "coverage":
-                value, path = _coverage_value(profile, root, reports_dir, step.coverage_kind or "")
-                if value is None:
-                    message = f"coverage report missing for {profile}"
-                    _write_log(log, [message])
-                    outcome = _record(
-                        step,
-                        procs.STATUS_ERROR,
-                        EXIT_EXECUTION,
-                        time.monotonic() - step_started,
-                        log,
-                        root,
-                        message,
-                    )
-                else:
-                    coverage_record = {
-                        "line": round(value, 2),
-                        "minimum": min_coverage,
-                        "report": report.display_path(path, root) if path else None,
-                    }
-                    status = procs.STATUS_PASSED if value >= min_coverage else procs.STATUS_FAILED
-                    _write_log(log, [json.dumps(coverage_record, indent=2)])
-                    outcome = _record(
-                        step,
-                        status,
-                        0 if status == procs.STATUS_PASSED else 1,
-                        time.monotonic() - step_started,
-                        log,
-                        root,
-                        _coverage_detail(profile, round(value, 2), min_coverage),
+                        _coverage_detail(measured["line"], min_coverage),
                     )
             elif step.kind == "unity-build":
                 result = unity.build_project(
@@ -474,18 +278,16 @@ def run_verify(
                     result.exit,
                     time.monotonic() - step_started,
                     result.log,
-                    root,
                     result.detail,
                 )
             elif step.kind == "unity-coverage-upload":
-                result = unity.coverage_upload(root, reports_dir, platform_home, runner, profile)
+                result = unity.coverage_upload(root, reports_dir, runner=runner, profile=profile)
                 outcome = _record(
                     step,
                     result.status,
                     result.exit,
                     time.monotonic() - step_started,
                     result.log,
-                    root,
                     result.detail,
                 )
             else:  # pragma: no cover - defensive
@@ -495,7 +297,6 @@ def run_verify(
                     EXIT_EXECUTION,
                     0.0,
                     log,
-                    root,
                     f"unknown step kind: {step.kind}",
                 )
         except DevctlError as exc:
@@ -506,7 +307,6 @@ def run_verify(
                 exc.code,
                 time.monotonic() - step_started,
                 log,
-                root,
                 exc.message,
             )
             procs.emit_error(exc.message, title=step.name)
@@ -519,7 +319,6 @@ def run_verify(
                 EXIT_EXECUTION,
                 time.monotonic() - step_started,
                 log,
-                root,
                 message,
             )
             procs.emit_error(message, title=step.name)
@@ -529,10 +328,7 @@ def run_verify(
         if outcome.status in {procs.STATUS_FAILED, procs.STATUS_ERROR}:
             mark_failure()
 
-    if profile in {"python", "typescript", "dotnet"}:
-        tests = _run_test_counts(profile, root, reports_dir)
     tests.setdefault("flaky", [])
-
     exit_code = aggregate_exit(outcomes)
     status = (
         procs.STATUS_PASSED

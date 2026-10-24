@@ -1,0 +1,25 @@
+# Toolchain for dev-platform itself. Consumer repositories carry their own
+# mise.toml rendered by the Copier template; they never read this file.
+[tools]
+python = "3.12"
+uv = "0.12.21"
+pre-commit = "4.7.0"
+zizmor = "1.31.1"
+actionlint = "1.7.12"
+
+[tasks.lint]
+description = "Lint the CLI, the reusable workflows and the composite actions"
+run = [
+  "uv run --project cli ruff check cli",
+  "uv run --project cli ruff format --check cli",
+  "zizmor --format plain --min-severity low --no-progress .github/workflows actions",
+  "actionlint",
+]
+
+[tasks.test]
+description = "Run the devctl test suite"
+run = "uv run --project cli pytest cli/tests -q"
+
+[tasks.check]
+description = "Everything dev-platform's own CI gate runs"
+depends = ["lint", "test"]

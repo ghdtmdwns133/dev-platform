@@ -110,7 +110,7 @@ runs:
         fi
     - name: Lint workflows with actionlint
       shell: bash
-      run: docker run --rm -v "$GITHUB_WORKSPACE:/repo" -w /repo rhysd/actionlint:1.7.7
+      run: docker run --rm -v "$GITHUB_WORKSPACE:/repo" -w /repo rhysd/actionlint:1.7.12
     - name: Generate CycloneDX SBOM
       shell: bash
       run: |

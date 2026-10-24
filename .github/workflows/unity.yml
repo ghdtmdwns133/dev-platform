@@ -132,12 +132,32 @@ jobs:
         if: ${{ inputs.unity-runner == 'none' }}
         shell: bash
         run: echo "::notice::Unity runner is 'none'; Unity tests/build skipped."
-      - name: Verify Unity project integrity
-        uses: ghdtmdwns133/dev-platform/actions/verify@v1
+      - name: Check out dev-platform
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          profile: unity-assets
-          working-directory: ${{ inputs.project-path }}
+          repository: ghdtmdwns133/dev-platform
           ref: ${{ inputs.platform-ref }}
+          path: .dev-platform
+          persist-credentials: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Verify Unity project integrity
+        shell: bash
+        working-directory: ${{ inputs.project-path }}
+        env:
+          PLATFORM_CLI: ${{ github.workspace }}/.dev-platform/cli
+        run: uv run --project "$PLATFORM_CLI" devctl verify --profile unity-assets
+      - name: Upload integrity reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: reports-unity-assets
+          path: ${{ inputs.project-path }}/artifacts/reports
+          if-no-files-found: warn
+          retention-days: 14
 
   tests:
     name: tests
