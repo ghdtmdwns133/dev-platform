@@ -64,9 +64,8 @@ pure-safe: `copier.yml` has no `_tasks`, so a direct render also works and
 uvx copier copy https://github.com/ghdtmdwns133/dev-platform my-service
 ```
 
-A direct Copier render never touches GitHub; `create_github_repo` only controls
-whether the post-copy message prints the bootstrap step. Use the bootstrap for
-repository creation and settings. With `--no-create-repo`, the bootstrap still
+A direct Copier render never touches GitHub. Use the bootstrap for repository
+creation and settings; it reports what it completed. With `--no-create-repo`, the bootstrap still
 checks whether the repository exists; if it does not, it prints a notice and
 skips settings and the ruleset. `--dry-run` is the no-network path.
 
