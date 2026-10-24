@@ -38,14 +38,20 @@ Unity integrity checks do not need the editor:
 uvx --from git+https://github.com/{{ owner }}/dev-platform@{{ platform_ref }}#subdirectory=cli devctl unity integrity
 ```
 
-Full Unity verification runs on the repository's self-hosted runner.
+{% if visibility == 'public' %}
+Public repositories run integrity only; CI calls `unity.yml` with `unity-runner: none`.
+{% else %}
+Full Unity verification runs on the repository's self-hosted runner (`unity-runner: self-hosted`).
+{% endif %}
 {% endif %}
 
 ## Continuous integration
 
 `.github/workflows/ci.yml` calls the shared platform workflows at `{{ platform_ref }}`. It also runs on pull requests, so the required checks are the same for humans and automation.
 
-{% if stack == 'unity' %}
+{% if stack == 'unity' and visibility == 'public' %}
+Required checks are `platform-verify / integrity` and `platform-security / scan`.
+{% elif stack == 'unity' %}
 Required checks are `platform-verify / integrity`, `platform-verify / tests` and `platform-security / scan`. Unity tests run only on a runner labeled `[self-hosted, windows, unity]`.
 {% elif stack == 'other' %}
 Required checks are `platform-verify / check` and `platform-security / scan`.
@@ -59,8 +65,8 @@ Renovate reads `renovate.json` and extends the shared preset `github>{{ owner }}
 
 ## Releases
 
-{% if stack == 'other' %}
-Releases are not configured for this stack-agnostic profile.
+{% if stack == 'other' or (stack == 'unity' and visibility == 'public') %}
+Releases are not configured for this profile.
 {% else %}
 Conventional commits drive release-please. Merging a Release PR creates the tag; `.github/workflows/release.yml` builds the artifact and attaches it to the release.
 {% endif %}
