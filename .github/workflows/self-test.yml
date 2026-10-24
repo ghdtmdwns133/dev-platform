@@ -86,7 +86,21 @@ jobs:
           working_directory: ${{ env.SMOKE }}
       - name: Run the check task
         working-directory: ${{ env.SMOKE }}
+        env:
+          SKIP: ${{ matrix.stack == 'unity' && 'unity-integrity' || '' }}
         run: mise run check
+      - name: Verify the Unity overlay and CLI surface
+        if: ${{ matrix.stack == 'unity' }}
+        working-directory: ${{ env.SMOKE }}
+        env:
+          PLATFORM_CLI: ${{ github.workspace }}/cli
+        run: |
+          set -euo pipefail
+          test -f .devplatform/config.json
+          test -f Assets/MyScripts/Editor/DevPlatform/OdinValidatorEntryPoint.cs
+          test -f .github/workflows/ci.yml
+          uv run --project "$PLATFORM_CLI" devctl unity integrity --help >/dev/null
+          uv run --project "$PLATFORM_CLI" devctl verify --help >/dev/null
       - name: Run the test task
         if: ${{ matrix.stack == 'python' || matrix.stack == 'typescript' || matrix.stack == 'dotnet' }}
         working-directory: ${{ env.SMOKE }}
