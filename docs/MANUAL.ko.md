@@ -32,6 +32,7 @@ flowchart LR
 ```bash
 # 새 clone에서 한 번
 mise trust && mise install
+mise run prepare
 mise exec -- pre-commit install
 
 # 이후
@@ -45,7 +46,7 @@ mise run check
 | `dotnet` | dotnet format |
 | `unity` | 공통 pre-commit 훅과 Unity 무결성 검사(에디터 불필요) |
 
-`mise run check`는 모든 파일에 pre-commit을 돌리므로 Unity 무결성 훅도 실행된다. staged 파일만 검사하는 `pre-commit install` 훅은 `Assets/`, `Packages/`, `ProjectSettings/` 중 하나라도 바뀌면 Unity 무결성 검사를 돌린다. 비-Unity에서 `check`는 CI의 `platform-verify / check`와 같은 설정이고, Unity에서는 CI의 `platform-verify / integrity`가 같은 종류의 무결성 검사를 별도로 실행한다. 실패하면 `mise run check`를 직접 다시 돌려 전체 출력을 본다. `--no-verify`로 건너뛸 수는 있지만 CI가 같은 검사를 더 넓게 실행하므로 실패를 미루는 것뿐이다.
+`mise run check`는 모든 파일에 pre-commit을 돌리므로 Unity 무결성 훅도 실행된다. staged 파일만 검사하는 `pre-commit install` 훅은 `Assets/`, `Packages/`, `ProjectSettings/`, `.devplatform/` 중 하나라도 바뀌면 Unity 무결성 검사를 돌린다. 비-Unity에서 `check`는 CI의 `platform-verify / check`와 같은 설정이고, Unity에서는 CI의 `platform-verify / integrity`가 같은 종류의 무결성 검사를 별도로 실행한다. 실패하면 `mise run check`를 직접 다시 돌려 전체 출력을 본다. `--no-verify`로 건너뛸 수는 있지만 CI가 같은 검사를 더 넓게 실행하므로 실패를 미루는 것뿐이다.
 
 ### 2.2 push하고 결과 보기
 
@@ -229,9 +230,9 @@ cd C:/dev/my-service
 mise run check
 ```
 
-`bootstrap_repo.py`가 Copier로 `template/`을 렌더링하고 `.copier-answers.yml`을 남긴다. 이어서 git 초기화와 첫 커밋, `mise trust`/`mise install`과 pre-commit 훅 설치, `gh repo create`(없을 때만), 저장소 설정·라벨·`platform-gates` ruleset, 가능한 경우 `CODECOV_TOKEN`과 Sentry 설정까지 처리한다. 새로 clone한 저장소는 git 훅을 상속하지 않으므로 그때만 `mise trust && mise install && mise exec -- pre-commit install`을 한 번 실행한다. 같은 명령을 다시 실행하면 저장소를 새로 만들지 않고 설정과 훅을 재조정한다. 네트워크 호출 없이 계획만 보려면 `--dry-run`을 붙인다.
+`bootstrap_repo.py`가 Copier로 `template/`을 렌더링하고 `.copier-answers.yml`을 남긴다. 이어서 git 초기화와 첫 커밋, `mise trust`/`mise install`, `mise run prepare`(정의된 경우), pre-commit 훅 설치, `gh repo create`(없을 때만), 저장소 설정·라벨·`platform-gates` ruleset, 가능한 경우 `CODECOV_TOKEN`과 Sentry 설정까지 처리한다. 새로 clone한 저장소는 git 훅을 상속하지 않으므로 그때만 `mise trust && mise install && mise run prepare && mise exec -- pre-commit install`을 한 번 실행한다. 같은 명령을 다시 실행하면 저장소를 새로 만들지 않고 설정과 훅을 재조정한다. 네트워크 호출 없이 계획만 보려면 `--dry-run`을 붙인다.
 
-`--template`은 `python`, `typescript`, `dotnet`, `unity`, `other` 중 하나다. `--visibility`, `--owner`, `--platform-ref`, `--min-coverage`, `--template-source`(기본 `gh:<owner>/dev-platform`), `--template-ref`(기본 최신 PEP 440 태그), `--local`(개발/self-test용), `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. GitHub 저장소를 만들지 않고 렌더링만 하려면 `--no-create-repo`를 쓰거나 `uvx copier copy`를 직접 실행한다. 정확한 플래그는 `--help`로 확인한다.
+`--template`은 `python`, `typescript`, `dotnet`, `unity`, `other` 중 하나다. `--visibility`, `--owner`, `--platform-ref`, `--min-coverage`, `--template-source`(기본 `https://github.com/<owner>/dev-platform`), `--template-ref`(기본 최신 PEP 440 태그), `--local`(개발/self-test용), `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. GitHub 저장소를 만들지 않고 렌더링만 하려면 `--no-create-repo`를 쓰거나 `uvx copier copy`를 직접 실행한다. 정확한 플래그는 `--help`로 확인한다.
 
 생성되는 주요 파일은 `.copier-answers.yml`, `mise.toml`, `.pre-commit-config.yaml`, `renovate.json`, caller 워크플로(`ci.yml`, `nightly.yml`, `release.yml`), `.github/rulesets/platform-gates.json`, release-please 설정이다. devcontainer는 python/typescript/dotnet에만, `.devplatform/config.json`과 Odin 브리지는 Unity에만 들어간다. Unity 결과물은 완전한 Unity 프로젝트가 아니라 Unity 프로젝트 루트에 놓는 플랫폼 계층이므로, 기존 Unity 프로젝트에 렌더링해 `.devplatform/config.json`을 맞춘다. Unity에서 `mise run check`를 CI 필수 검사로도 쓰려면 `ci.yml`을 `run-tests: false`로 호출하는 `platform-check` 작업을 추가한다(`project-delta`가 이렇게 한다). 기존 저장소를 손으로 붙이는 방법과 ruleset 설정은 [ADOPTION.md](ADOPTION.md)에 있다.
 

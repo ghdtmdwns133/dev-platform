@@ -16,7 +16,7 @@
 | --- | --- |
 | `copier.yml`, `template/` | 새 저장소를 렌더링하는 pure-safe Copier 템플릿. `_tasks` 없음. |
 | `scripts/bootstrap_repo.py` | 새 저장소 생성과 기존 저장소 설정 재조정의 단일 진입점. Copier 렌더링, `gh repo create`, 설정·라벨·ruleset·시크릿을 처리한다. |
-| `default.json` | Renovate 공유 프리셋(`github>ghdtmdwns133/dev-platform`). |
+| `default.json`, `renovate.json` | Renovate 공유 프리셋과 dev-platform 자체의 온보딩 설정(프리셋 상속). |
 | `mise.toml` | 플랫폼 자체의 도구 핀과 `check`, `lint`, `test` 태스크. |
 | `actions/` | `security-scan`, `notify`, `unity-cloud-build` 등 재사용 composite action. |
 | `.github/workflows/` | 재사용 `ci.yml`, `security.yml`, `unity.yml`, `release.yml`, `nightly.yml`과 자체 검증 `self-test.yml`. |
@@ -117,9 +117,10 @@ gh api repos/actions/checkout/git/tags/<sha> --jq .object.sha   # annotated 태�
 
 - `project-delta/.devplatform/config.json`의 `unity.version`과 `ProjectSettings/ProjectVersion.txt`
 - `template/`의 Unity `.devplatform/config.json` 기본값
-- `unity.yml`의 `unity-version` 기본값과 caller의 `unity-version`
 - UBA를 쓴다면 대시보드 build target의 에디터 버전
 - `cli`의 기본 버전과 버전 문자열을 단정하는 테스트
+
+`unity.yml`은 이제 `unity-version` 입력을 받지 않는다. 에디터 버전은 소비 저장소의 `.devplatform/config.json`이 정본이다.
 
 **Python/Node/.NET.** 생성 저장소는 각 `mise.toml`의 `[tools]`가 정본이다. 템플릿의 `global.json`, devcontainer 이미지 태그, `packageManager`/`engines`도 같은 버전대를 가리켜야 한다. 플랫폼 자체는 루트 `mise.toml`을 따른다.
 
@@ -151,7 +152,7 @@ uv run --script scripts/bootstrap_repo.py \
   --template python --name my-service --dest C:/dev/my-service
 ```
 
-`--dry-run`으로 계획을 먼저 보고, `--owner`, `--visibility`, `--platform-ref`, `--min-coverage`, `--template-source`(기본 `gh:<owner>/dev-platform`), `--template-ref`(기본 최신 PEP 440 태그), `--local`(개발/self-test용), `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. bootstrap은 git 초기화·첫 커밋, `mise trust`/`mise install`과 pre-commit 훅 설치, `gh repo create`(없을 때만), retention 14일, workflow 권한, auto-merge, branch 삭제, 취약점 알림, 라벨, `platform-gates` ruleset, 가능한 경우 Codecov/Sentry 시크릿을 처리한다. 같은 명령을 다시 실행하면 설정을 재조정하고 훅도 다시 설치한다.
+`--dry-run`으로 계획을 먼저 보고, `--owner`, `--visibility`, `--platform-ref`, `--min-coverage`, `--template-source`(기본 `https://github.com/<owner>/dev-platform`), `--template-ref`(기본 최신 PEP 440 태그), `--local`(개발/self-test용), `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. bootstrap은 git 초기화·첫 커밋, `mise trust`/`mise install`, `mise run prepare`(정의된 경우), pre-commit 훅 설치, `gh repo create`(없을 때만), retention 14일, workflow 권한, auto-merge, branch 삭제, 취약점 알림, 라벨, `platform-gates` ruleset, 가능한 경우 Codecov/Sentry 시크릿을 처리한다. 같은 명령을 다시 실행하면 설정을 재조정하고 훅도 다시 설치한다.
 
 **기존 저장소.** `.copier-answers.yml`을 새로 만들지 않는다. 다음을 직접 넣는다.
 
@@ -169,7 +170,7 @@ uv run --script scripts/bootstrap_repo.py \
   --name project-delta --visibility private --dry-run
 ```
 
-`--root` 모드는 `gh repo create`를 건너뛰고, `mise trust`/`mise install`과 pre-commit 훅 설치를 수행하며, `<root>/.github/rulesets/platform-gates.json`이 있으면 ruleset을 갱신하고 없으면 notice만 남긴다. `.copier-answers.yml`은 쓰지 않는다.
+`--root` 모드는 `gh repo create`를 건너뛰고, `mise trust`/`mise install`, `mise run prepare`(정의된 경우), pre-commit 훅 설치를 수행하며, `<root>/.github/rulesets/platform-gates.json`이 있으면 ruleset을 갱신하고 없으면 notice만 남긴다. 기존 원격 저장소가 있으면 로컬 `origin`이 정확히 `<owner>/<name>`을 가리켜야 하며, 다르면 exit 1로 중단한다. `.copier-answers.yml`은 쓰지 않는다.
 
 **필수 검사.** 첫 초록 실행 뒤 실제 이름을 확인한다.
 
@@ -179,10 +180,11 @@ gh api repos/ghdtmdwns133/<repo>/commits/main/check-runs --jq '[.check_runs[].na
 
 - `python`, `typescript`, `dotnet`: `platform-verify / check`, `platform-verify / test`, `platform-security / scan`
 - `other`: `platform-verify / check`, `platform-security / scan` (테스트 태스크 없음)
-- Unity: `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan`
-- `project-delta`: 위 Unity 검사에 `platform-check / check`를 더한다(`ci.yml`을 `run-tests: false`로 호출).
+- public Unity(`unity-runner: none`): `platform-verify / integrity`, `platform-security / scan`
+- private Unity(`unity-runner: self-hosted`): `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan`; UBA 모드면 `platform-verify / cloud-build` 추가
+- `project-delta`: 위 private Unity 검사에 `platform-check / check`를 더한다(`ci.yml`을 `run-tests: false`로 호출).
 
-Unity 저장소에는 `platform-verify / check`를 넣지 않는다. 그 작업은 존재하지 않는다. `mise run check`를 CI에서도 쓰려면 `platform-check` caller를 따로 두고 `platform-check / check`를 넣는다. `notify`와 평소 건너뛰는 build/GameCI 작업도 넣지 않는다. ruleset JSON과 `gh api` 명령은 [ADOPTION.md](ADOPTION.md)에 있다. 같은 이름의 ruleset이 있으면 `PUT`으로 갱신한다.
+Unity 저장소에는 `platform-verify / check`를 넣지 않는다. 그 작업은 존재하지 않는다. `mise run check`를 CI에서도 쓰려면 `platform-check` caller를 따로 두고 `platform-check / check`를 넣는다. `notify`와 평소 건너뛰는 build 작업도 넣지 않는다. ruleset JSON과 `gh api` 명령은 [ADOPTION.md](ADOPTION.md)에 있다. 같은 이름의 ruleset이 있으면 `PUT`으로 갱신한다.
 
 **시크릿.** Doppler의 `<repo>/ci` 동기화 또는 `gh secret set <NAME> -R ghdtmdwns133/<repo>`를 쓴다. 값은 저장소에 커밋하지 않는다. 새 저장소는 Doppler 동기화를 새로 만들어야 한다. [SECRETS.md](SECRETS.md).
 
@@ -213,7 +215,7 @@ uv run --project C:/dev/dev-platform/cli devctl unity integrity --write-baseline
 
 **self-test 실패 순서.** `cli`가 깨지면 나머지는 의미가 없으므로 먼저 본다. 다음은 템플릿 렌더링, devcontainer, 보안, 워크플로 린트 순으로 확인한다. 템플릿 작업은 Copier로 임시 디렉터리에 렌더링하고 `mise run check`/`test`를 돌리므로, 실패는 대개 조건부 파일 누락이나 잘못된 Copier 질문이다. devcontainer 실패는 이미지 태그나 도구 부재, workflow-lint는 새 action의 SHA 고정 누락이 흔한 원인이다.
 
-**CI 실패 로그.** 실패한 단계만 보려면 `gh run view <run-id> --log-failed`. 비-Unity는 `coverage` 아티팩트를, Unity는 `reports-unity-assets`(무결성) 또는 GameCI/build 아티팩트를 내려받아 로컬 재현 없이도 원인을 볼 수 있다.
+**CI 실패 로그.** 실패한 단계만 보려면 `gh run view <run-id> --log-failed`. 비-Unity는 `coverage` 아티팩트를, Unity는 `reports-unity-assets`(무결성) 또는 UBA/build 아티팩트를 내려받아 로컬 재현 없이도 원인을 볼 수 있다.
 
 ```bash
 gh run download <run-id> -n reports-unity-assets -D artifacts/ci-reports
@@ -240,7 +242,7 @@ gh workflow run release.yml -R ghdtmdwns133/project-delta --ref main \
 
 ## 9. 알려진 제약
 
-- **Unity 학생 라이선스.** 보유 라이선스는 named-user Student라 시리얼도 `.ulf`도 없다. GameCI v4가 지원하는 활성화 방식이 아니고, Unity Editor Software Terms §2.8은 서드파티가 클라우드/원격 서버에서 에디터를 실행하는 것을 금지한다. GitHub 호스팅 러너에서 Unity를 돌리는 경로는 `unity-runner: gameci`로 구현만 되어 있고 기본값이 아니다.
+- **Unity 학생 라이선스.** 보유 라이선스는 named-user Student라 시리얼도 `.ulf`도 없다. GameCI v4가 지원하는 활성화 방식이 아니고, Unity Editor Software Terms §2.8은 서드파티가 클라우드/원격 서버에서 에디터를 실행하는 것을 금지한다. 그래서 `unity.yml`에는 `gameci` 옵션과 GameCI 작업·라이선스 시크릿이 없으며, GitHub 호스팅 러너에서 Unity를 돌리는 경로는 제공하지 않는다.
 - **gitleaks 전체 히스토리.** `actions/security-scan`은 전체 히스토리를 스캔한다. 과거 커밋의 비밀도 계속 잡히며, 비밀을 교체해도 히스토리에 남아 있으면 빨간색이 유지된다. 브랜치 삭제는 그 커밋이 기본 브랜치 히스토리에 없을 때만 효과가 있다.
 - **`GITHUB_TOKEN` PR.** `GITHUB_TOKEN`으로 만든 PR은 `pull_request` 워크플로를 트리거하지 않는다. release-please의 Release PR이 그렇기 때문에 `release.yml`이 CI를 대신 dispatch하고, `action_required` 실행을 승인한 뒤 병합을 기다린다.
 - **docs-only push.** caller가 `paths-ignore: [docs/**, "**/*.md"]`를 두므로 문서만 바꾸면 CI가 생기지 않을 수 있다. 필수 검사가 있는 저장소에서는 소유자 bypass로 병합하거나 코드 변경을 섞는다.

@@ -23,14 +23,14 @@ grounds.
 | ------------- | ------------------------------------------------------------------------- |
 | `none`        | Integrity only. Unity test/build jobs are skipped with a notice.          |
 | `self-hosted` | Unity runs on the private repository's self-hosted Windows runner.        |
-| `gameci`      | GameCI test and build jobs run; requires a GameCI-supported license.      |
 | `uba`         | Unity Build Automation builds the commit on Unity-hosted Windows machines.|
 
-The generated Unity caller uses `unity-runner: self-hosted`. The reusable
-workflow's input default is `none`, so a caller without a runner still gets the
-editor-free integrity gate. The template renders a platform layer to place at a
-Unity project root; it is not a complete Unity project. Integrity always runs on `ubuntu-latest` and never
-needs an editor. The `changes` job on Ubuntu compares the event's base and head
+The generated caller uses `unity-runner: none` for a public repository and
+`self-hosted` for a private one; the reusable workflow's input default is
+`none`. The public ruleset therefore requires only integrity and security, not
+a `tests` check that never runs. The template renders a platform layer to place
+at a Unity project root; it is not a complete Unity project. Integrity always
+runs on `ubuntu-latest` and never needs an editor. The `changes` job on Ubuntu compares the event's base and head
 commits and reports whether `Assets/`, `Packages/` or `ProjectSettings/`
 changed. Push events use `github.event.before` (all-zero or forced pushes run
 the tests), pull requests use the base SHA, and schedule or manual runs always
@@ -43,7 +43,8 @@ false) runs `devctl unity build` on the self-hosted runner, zips
 the `unity-build` artifact. Callers enable it on tags and nightly runs.
 
 Job and check names: the Unity caller names its job `platform-verify`, so the
-checks are `platform-verify / integrity` and `platform-verify / tests`.
+checks are `platform-verify / integrity` and, for a private self-hosted runner,
+`platform-verify / tests`; UBA mode adds `platform-verify / cloud-build`.
 `platform-verify / check` does not exist for Unity repositories. A Unity
 repository that also wants the `mise run check` gate adds a `platform-check`
 caller that invokes `ci.yml` with `run-tests: false`; `project-delta` does,
@@ -78,13 +79,14 @@ self-hosted job checks out `ghdtmdwns133/dev-platform` at the caller's
 `uv run --project .dev-platform/cli devctl ...` with the consumer repository as
 the working directory.
 
-## GameCI mode
+## Why GameCI is not offered
 
-GameCI remains implemented for accounts that hold a supported license. Enable
-it with `unity-runner: gameci` and provide `UNITY_LICENSE`, `UNITY_EMAIL` and
-`UNITY_PASSWORD`. If the `6000.5.1f1` image is unavailable, the job fails and
-the report marks Unity execution as blocked. The platform never sets GameCI as
-the default.
+GameCI was considered and removed from the reusable workflow. The available
+Student named-user license is not one of the activation methods GameCI v4
+supports, and the Editor Software Terms cited above forbid running the editor
+on a cloud runner. No `gameci` value, GameCI jobs or Unity license secrets are
+part of `unity.yml`; the historical constraint remains recorded here so the
+option is not reintroduced without a supported license.
 
 ## Unity Build Automation (UBA)
 

@@ -12,21 +12,24 @@ second, hidden gate.
 | `unity`      | `mise run check` and `devctl verify --profile unity`      | `unity.yml` (`integrity`, `tests`) plus optional `ci.yml` check caller |
 | `other`      | `mise run check`                                           | `ci.yml` with tests disabled              |
 
-`check`, `test` and `build` live in the generated `mise.toml`. `check` runs
-`pre-commit run --all-files` against the repository's
+`check`, `test` and `build` live in the generated `mise.toml`; Python,
+TypeScript and .NET also define `prepare` and `check` depends on it. `check`
+runs `pre-commit run --all-files` against the repository's
 `.pre-commit-config.yaml`; the same file is used by the pre-commit install and
 by CI. `test` writes its native coverage report under `coverage/`, which CI
 uploads as an artifact. `build` writes the release artifact under `dist/`.
 `test` and `build` are absent for `other`; Unity has no `test` task because its
 test execution belongs to `unity.yml` and `devctl`.
 
-`scripts/bootstrap_repo.py` already runs `mise trust`, `mise install` and
-`mise exec -- pre-commit install` for a newly created repository. A fresh clone
-cannot inherit git hooks, so run this one-time setup there:
+`scripts/bootstrap_repo.py` already runs `mise trust`, `mise install`,
+`mise run prepare` (when defined), and `mise exec -- pre-commit install` for a
+newly created repository. A fresh clone cannot inherit git hooks, so run this
+one-time setup there:
 
 ```bash
 mise trust
 mise install
+mise run prepare
 mise exec -- pre-commit install
 ```
 
@@ -152,9 +155,11 @@ independently and produces `platform-security / scan`.
 
 Unity gates run through `unity.yml`. Its `integrity` job runs
 `devctl verify --profile unity-assets` on `ubuntu-latest` and uploads
-`reports-unity-assets`; the `tests` job runs on the self-hosted Windows runner
-with `devctl verify --profile unity` and uploads coverage to Codecov when the
-token is present. GameCI test results and build zips have their own artifacts.
+`reports-unity-assets`; the `tests` job runs only for a private repository on
+the self-hosted Windows runner with `devctl verify --profile unity` and uploads
+coverage to Codecov when the token is present. Public repositories use
+`unity-runner: none` and require integrity only. UBA and build jobs publish
+their own artifacts; GameCI is not an active runner option.
 A Unity repository can also add a `platform-check` caller that invokes `ci.yml`
 with `run-tests: false`; `project-delta` does, producing
 `platform-check / check`. The Unity caller itself never produces

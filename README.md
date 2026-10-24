@@ -23,9 +23,11 @@ same commands and the same configuration.
 - **pre-commit** — each generated repository has a `.pre-commit-config.yaml`.
   `mise run check` runs it on all files locally, and CI runs the same check.
 - **Renovate** — [`default.json`](default.json) is the shared preset
-  (`github>ghdtmdwns133/dev-platform`) for dependency updates and action pins.
-  The user confirmed the hosted Renovate app is installed for all repositories
-  on 2026-10-24; actual bot run/PR evidence is still to be verified.
+  (`github>ghdtmdwns133/dev-platform`) for dependency updates and action pins;
+  the platform's own [`renovate.json`](renovate.json) extends it so this
+  repository is onboarded too. The user confirmed the hosted Renovate app is
+  installed for all repositories on 2026-10-24; actual bot run/PR evidence is
+  still to be verified.
 - **Unified workflows** — `ci.yml`, `security.yml`, `unity.yml`, `release.yml`
   and `nightly.yml` are reusable, plus `self-test.yml` for the platform itself.
   Dependency PR auto-merge is handled by Renovate; release-please PRs are
@@ -53,7 +55,8 @@ mise run check
 ```
 
 The bootstrap asks Copier for the stack-specific files, applies the repository
-settings, runs `mise trust`/`mise install`, and installs the pre-commit hook.
+settings, runs `mise trust`/`mise install`, `mise run prepare` when the stack
+defines it, and installs the pre-commit hook.
 It writes `.copier-answers.yml` (Copier, not the script). Pass `--owner`,
 `--visibility`, `--platform-ref`, `--min-coverage`,
 `--enable-codecov`/`--no-enable-codecov`,
@@ -66,16 +69,17 @@ A fresh clone later cannot inherit git hooks, so install them once there:
 
 ```bash
 mise trust && mise install
+mise run prepare
 mise exec -- pre-commit install
 ```
 
 To render only, without any GitHub work, use Copier directly:
 
 ```bash
-uvx copier copy gh:ghdtmdwns133/dev-platform my-service
+uvx copier copy https://github.com/ghdtmdwns133/dev-platform my-service
 ```
 
-The default Copier source is `gh:ghdtmdwns133/dev-platform` at the latest PEP
+The default Copier source is `https://github.com/ghdtmdwns133/dev-platform` at the latest PEP
 440 tag; `--template-source` overrides it and `--template-ref` pins a ref.
 `--local` renders from the current checkout instead and is intended for
 development/self-test, not normal project creation.
@@ -110,12 +114,13 @@ does not contain a complete Unity project.
   `platform-security / scan`. `security.yml` produces
   `platform-security / scan`.
 - Unity callers use `unity.yml` (as `platform-verify`), producing
-  `platform-verify / integrity` and, on the self-hosted runner,
-  `platform-verify / tests`. A repository that also wants the `mise run check`
-  gate adds a `platform-check` caller that invokes `ci.yml` with
-  `run-tests: false`; `project-delta` does, producing `platform-check / check`.
-  Unity repositories never produce `platform-verify / check`; do not require
-  that absent check.
+  `platform-verify / integrity`; a private repository with the self-hosted
+  runner also produces `platform-verify / tests`, while a public repository
+  uses `unity-runner: none` and requires only integrity. A repository that also
+  wants the `mise run check` gate adds a `platform-check` caller that invokes
+  `ci.yml` with `run-tests: false`; `project-delta` does, producing
+  `platform-check / check`. Unity repositories never produce
+  `platform-verify / check`; do not require that absent check.
 - The check job runs `mise run check`; the test job runs `mise run test` and
   uploads `coverage/` as an artifact. Codecov uploads only when the job is
   enabled and a token is present; an enabled job with no token prints a
@@ -128,8 +133,9 @@ does not contain a complete Unity project.
 - Renovate opens dependency and action-update PRs once the installed app
   processes the repository; auto-merge uses GitHub's native auto-merge and the
   required checks from the ruleset. Release PRs are handled by `release.yml`.
-- Unity runs on the private repository's self-hosted Windows runner, through
-  GameCI only with a supported license, or through Unity Build Automation.
+- Unity runs on the private repository's self-hosted Windows runner, or through
+  Unity Build Automation. GameCI is not an active option because the Student
+  named-user license is not a supported GameCI activation method.
 
 ## Documentation
 

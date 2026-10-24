@@ -14,7 +14,7 @@ uv run --script C:/dev/dev-platform/scripts/bootstrap_repo.py \
 `--template` is one of `python`, `typescript`, `dotnet`, `unity`, `other`.
 Optional flags: `--owner` (default `ghdtmdwns133`), `--visibility private|public`
 (default `private`), `--min-coverage` (default 80), `--platform-ref` (default
-`v1`), `--template-source` (default `gh:<owner>/dev-platform`),
+`v1`), `--template-source` (default `https://github.com/<owner>/dev-platform`),
 `--template-ref` (default latest PEP 440 tag), `--local` (render from this
 checkout for development/self-test), `--create-repo`/`--no-create-repo`,
 `--enable-codecov`/`--no-enable-codecov`,
@@ -27,8 +27,8 @@ The command is the whole creation path:
 1. Renders `template/` with Copier and writes `.copier-answers.yml`.
 2. Runs `git init` and the first commit when the destination is not yet a
    repository.
-3. Runs `mise trust`, `mise install`, and
-   `mise exec -- pre-commit install` for the new repository.
+3. Runs `mise trust`, `mise install`, `mise run prepare` when the rendered
+   `mise.toml` defines it, and `mise exec -- pre-commit install`.
 4. Runs `gh repo create <owner>/<name> --<visibility> --source . --push` when
    the repository does not exist. A repository that already exists is not
    recreated.
@@ -52,12 +52,16 @@ network access, rendering or writes.
 
 Prerequisites are `uv` (for `uv run --script`), `git`, `mise`, and an
 authenticated `gh`. The bootstrap runs a pinned Copier (`uvx copier@9.19.1`).
-The template is
+The canonical source is the full HTTPS URL; `--template-source` also accepts
+`gh:<owner>/<repo>` and normalizes it in both the render and
+`.copier-answers.yml`. `--local` renders the current checkout at `HEAD` and
+rewrites `_src_path` to the canonical HTTPS URL unless an explicit non-`gh`
+source was given. The template is
 pure-safe: `copier.yml` has no `_tasks`, so a direct render also works and
 `copier update` does not need `--trust`:
 
 ```bash
-uvx copier copy gh:ghdtmdwns133/dev-platform my-service
+uvx copier copy https://github.com/ghdtmdwns133/dev-platform my-service
 ```
 
 A direct Copier render never touches GitHub; `create_github_repo` only controls
@@ -66,8 +70,8 @@ repository creation and settings. With `--no-create-repo`, the bootstrap still
 checks whether the repository exists; if it does not, it prints a notice and
 skips settings and the ruleset. `--dry-run` is the no-network path.
 
-After creation, the bootstrap has already run `mise trust`/`mise install` and
-installed the pre-commit hook:
+After creation, the bootstrap has already run `mise trust`/`mise install`,
+`mise run prepare` (where defined), and installed the pre-commit hook:
 
 ```bash
 cd my-service
@@ -79,6 +83,7 @@ A fresh clone later cannot inherit git hooks, so run the one-time setup there:
 
 ```bash
 mise trust && mise install
+mise run prepare
 mise exec -- pre-commit install
 ```
 
@@ -134,7 +139,10 @@ uv run --script C:/dev/dev-platform/scripts/bootstrap_repo.py \
 
 Remove `--dry-run` to apply. It skips `gh repo create`, updates the settings,
 labels and ruleset (when the JSON is present), and sets secrets only when their
-values are available.
+values are available. When the remote repository already exists, the local
+`origin` must resolve to exactly `<owner>/<name>`; a missing or different origin
+exits 1 with clone/reconcile instructions and makes no settings or ruleset
+changes.
 
 ## Required status checks
 
@@ -149,8 +157,9 @@ gh api repos/ghdtmdwns133/<repo>/commits/main/check-runs \
 | --------------- | --------------- |
 | `python`, `typescript`, `dotnet` | `platform-verify / check`, `platform-verify / test`, `platform-security / scan` |
 | `other` | `platform-verify / check`, `platform-security / scan` (no test task) |
-| Unity with only `unity.yml` | `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan` |
-| Unity also calling `ci.yml` with `run-tests: false` (project-delta) | `platform-check / check` plus the three Unity checks above |
+| Public Unity (`unity-runner: none`) | `platform-verify / integrity`, `platform-security / scan` |
+| Private Unity (`unity-runner: self-hosted`) | `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan`; add `platform-verify / cloud-build` only in UBA mode |
+| Unity also calling `ci.yml` with `run-tests: false` (project-delta) | add `platform-check / check` to the applicable Unity checks |
 
 Unity repositories use `unity.yml` for the Unity gates and never produce
 `platform-verify / check`. A repository that also wants the same `mise run
@@ -160,7 +169,7 @@ check` gate as non-Unity stacks adds a `platform-check` caller that invokes
 ruleset: that name never appears there and an absent required check blocks
 every pull request.
 
-Never include `notify` or any build/GameCI job that is normally skipped. Confirm
+Never include `notify` or any build job that is normally skipped. Confirm
 the names from the command above before writing the ruleset, because a
 reusable-workflow job name is `<caller job> / <job id>`.
 
@@ -195,9 +204,11 @@ JSON
 ```
 
 For `other`, omit the `platform-verify / test` context. For a Unity repository,
-replace the first two contexts with `platform-verify / integrity` and
-`platform-verify / tests`; if it has a `platform-check` caller, add
-`platform-check / check` as well. The single bypass is the repository admin role
+replace the first two contexts with `platform-verify / integrity` and, only for
+a private self-hosted runner, `platform-verify / tests`; UBA mode adds
+`platform-verify / cloud-build`. If it has a `platform-check` caller, add
+`platform-check / check` as well. The template already renders the public
+(integrity only) or private (integrity + tests) ruleset. The single bypass is the repository admin role
 (`actor_id: 5`), so the owner can still push directly while bots and pull
 requests must pass the gates. If a ruleset with the same name exists, update it
 with `PUT repos/.../rulesets/<id>` rather than creating a duplicate.
@@ -230,6 +241,9 @@ Generated repositories contain:
 ```json
 { "extends": ["github>ghdtmdwns133/dev-platform"] }
 ```
+
+The platform repository itself carries the same `renovate.json`; the preset
+alone does not onboard dev-platform.
 
 The policy lives in [`default.json`](../default.json): `config:recommended`,
 platform auto-merge, auto-merge for minor/patch/digest updates, digest pinning

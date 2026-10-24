@@ -58,7 +58,11 @@ as a completed integration.
 | Any TypeScript consumer with Sentry | `SENTRY_PROJECT` | Sentry project slug. |
 | Any TypeScript consumer with Sentry | `VITE_SENTRY_DSN` | Browser DSN (a public value, managed with the rest). |
 | Unity Build Automation consumer | `UNITY_BUILD_API_KEY`, `UNITY_BUILD_ORG_ID`, `UNITY_BUILD_PROJECT_ID` | UBA builds; see [UNITY-CI.md](UNITY-CI.md). |
-| GameCI runner mode only | `UNITY_LICENSE`, `UNITY_EMAIL`, `UNITY_PASSWORD` | GameCI activation. The Student named-user license cannot use this path, so these stay unset here. |
+
+GameCI is not an active runner option. The Student named-user license is not a
+GameCI-supported activation method, so no `UNITY_LICENSE`, `UNITY_EMAIL` or
+`UNITY_PASSWORD` secrets are used; they are listed here only as a historical
+constraint from [UNITY-CI.md](UNITY-CI.md).
 
 The bootstrap reads `CODECOV_TOKEN` from the environment or, when the Doppler
 CLI is available, from `doppler secrets get CODECOV_TOKEN --plain --project
