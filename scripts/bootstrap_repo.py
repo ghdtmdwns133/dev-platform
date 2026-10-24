@@ -332,6 +332,13 @@ def repository_exists(plan: Plan, repo: str) -> bool:
     return result.returncode == 0
 
 
+def redact_remote(url: str) -> str:
+    if "@" in url and "://" in url:
+        scheme, rest = url.split("://", 1)
+        return f"{scheme}://***@{rest.split('@', 1)[1]}"
+    return url
+
+
 def github_remote_slug(url: str) -> str | None:
     value = url.strip().rstrip("/")
     for prefix in ("https://github.com/", "http://github.com/", "ssh://git@github.com/"):
@@ -397,7 +404,8 @@ def ensure_remote_repository(
             )
         if slug != repo.lower():
             raise SystemExit(
-                f"error: {root} has origin {url!r}, which does not resolve to {repo}.\n"
+                f"error: {root} has origin {redact_remote(url)!r},"
+                f" which does not resolve to {repo}.\n"
                 "Refusing to apply repository settings to an unrelated remote.\n"
                 f"Clone {repo} or correct 'origin', then re-run."
             )
