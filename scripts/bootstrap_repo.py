@@ -291,6 +291,7 @@ def mise_task_names(root: Path) -> set[str]:
     result = subprocess.run(
         ["mise", "tasks", "--name-only"],
         cwd=root,
+        check=False,
         capture_output=True,
         text=True,
     )
@@ -342,8 +343,7 @@ def github_remote_slug(url: str) -> str | None:
             value = value[len("git@github.com:") :]
         else:
             return None
-    if value.endswith(".git"):
-        value = value[: -len(".git")]
+    value = value.removesuffix(".git")
     parts = value.split("/")
     if len(parts) != 2 or not all(parts):
         return None
@@ -354,6 +354,7 @@ def origin_url(root: Path) -> str | None:
     result = subprocess.run(
         ["git", "remote", "get-url", "origin"],
         cwd=root,
+        check=False,
         capture_output=True,
         text=True,
     )

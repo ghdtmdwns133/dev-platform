@@ -186,6 +186,10 @@ jobs:
       contents: read
       issues: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Open or update the failure issue
         uses: ./actions/notify
         with:
