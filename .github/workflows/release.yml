@@ -354,8 +354,8 @@ jobs:
   build:
     name: build
     needs: [release-please, mode]
-    if: ${{ needs.release-please.outputs.release_created == 'true' && (inputs.profile != 'unity' || needs.mode.outputs.uba != 'true') && (github.event.repository.private == true || !contains(inputs.runs-on, 'self-hosted')) }}
-    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    if: ${{ needs.release-please.outputs.release_created == 'true' && (inputs.profile != 'unity' || needs.mode.outputs.uba != 'true') && (github.event.repository.private == true || inputs.profile != 'unity') }}
+    runs-on: ${{ github.event.repository.private == true && fromJSON(inputs.runs-on) || fromJSON('["ubuntu-latest"]') }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -367,7 +367,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.release-please.outputs.tag_name }}
-          clean: ${{ !contains(inputs.runs-on, 'self-hosted') }}
+          clean: ${{ github.event.repository.private != true || !contains(inputs.runs-on, 'self-hosted') }}
           persist-credentials: false
       - name: Check out dev-platform
         if: ${{ inputs.profile == 'unity' }}
@@ -376,7 +376,7 @@ jobs:
           repository: ghdtmdwns133/dev-platform
           ref: ${{ inputs.platform-ref }}
           path: .dev-platform
-          clean: ${{ !contains(inputs.runs-on, 'self-hosted') }}
+          clean: ${{ github.event.repository.private != true || !contains(inputs.runs-on, 'self-hosted') }}
           persist-credentials: false
       - name: Install tools from mise.toml
         if: ${{ inputs.profile != 'unity' }}
@@ -388,13 +388,13 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - name: Build release artifacts
-        if: ${{ !contains(inputs.runs-on, 'windows') }}
+        if: ${{ github.event.repository.private != true || !contains(inputs.runs-on, 'windows') }}
         shell: bash
         env:
           BUILD_COMMAND: ${{ inputs.build-command }}
         run: bash -c "$BUILD_COMMAND"
       - name: Build release artifacts (Windows)
-        if: ${{ contains(inputs.runs-on, 'windows') }}
+        if: ${{ github.event.repository.private == true && contains(inputs.runs-on, 'windows') }}
         shell: pwsh
         env:
           BUILD_COMMAND: ${{ inputs.build-command }}
