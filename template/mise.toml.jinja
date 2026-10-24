@@ -11,11 +11,13 @@ pre-commit = { version = "4.7.0", python = "3.12" }
 "aqua:gitleaks/gitleaks" = "8.30.1"
 
 {% if stack == 'python' %}
+[tasks.prepare]
+description = "Install Python dependencies"
+run = "uv sync --frozen"
+
 [tasks.check]
-run = [
-  "uv sync --frozen",
-  "pre-commit run --all-files",
-]
+depends = ["prepare"]
+run = "pre-commit run --all-files"
 
 [tasks.test]
 run = "uv run --frozen pytest -q --cov --cov-report=xml:coverage/coverage.xml --cov-report=term-missing --cov-fail-under={{ min_coverage }}"
@@ -23,11 +25,13 @@ run = "uv run --frozen pytest -q --cov --cov-report=xml:coverage/coverage.xml --
 [tasks.build]
 run = "uv build --out-dir dist"
 {% elif stack == 'typescript' %}
+[tasks.prepare]
+description = "Install Node dependencies"
+run = "npm ci --no-audit --no-fund"
+
 [tasks.check]
-run = [
-  "npm ci --no-audit --no-fund",
-  "pre-commit run --all-files",
-]
+depends = ["prepare"]
+run = "pre-commit run --all-files"
 
 [tasks.test]
 run = [
@@ -41,11 +45,13 @@ run = [
   "npm run build",
 ]
 {% elif stack == 'dotnet' %}
+[tasks.prepare]
+description = "Restore .NET dependencies"
+run = "dotnet restore DevFlow.slnx"
+
 [tasks.check]
-run = [
-  "dotnet restore DevFlow.slnx",
-  "pre-commit run --all-files",
-]
+depends = ["prepare"]
+run = "pre-commit run --all-files"
 
 [tasks.test]
 run = "dotnet test DevFlow.slnx --collect:\"XPlat Code Coverage\" --results-directory coverage"

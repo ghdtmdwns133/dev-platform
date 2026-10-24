@@ -63,6 +63,6 @@ repos:
         entry: mise exec -- uvx --from git+https://github.com/{{ owner }}/dev-platform@{{ platform_ref }}#subdirectory=cli devctl unity integrity
         language: system
         pass_filenames: false
-        files: '^(Assets|Packages|ProjectSettings)/'
+        files: '^(Assets|Packages|ProjectSettings|\.devplatform)/'
 {% endif %}
 # Generated from the dev-platform Copier template.

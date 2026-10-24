@@ -38,6 +38,7 @@ LABELS = (
     ("ci-alert", "B60205", "Automated CI failure reports"),
 )
 SENTRY_PLATFORM = "javascript-react"
+PLATFORM_REPOSITORY = "dev-platform"
 
 
 def log(message: str) -> None:
@@ -61,7 +62,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--template-source",
         default=None,
-        help="Copier source (default: gh:<owner>/dev-platform)",
+        help=(
+            "Copier source (default: https://github.com/<owner>/dev-platform); "
+            "gh:<owner>/<repo> is accepted and normalized to HTTPS"
+        ),
     )
     parser.add_argument(
         "--local",
@@ -201,6 +205,44 @@ class Plan:
         return self.doppler(name)
 
 
+def canonical_template_source(owner: str) -> str:
+    return f"https://github.com/{owner}/{PLATFORM_REPOSITORY}"
+
+
+def normalize_template_source(source: str) -> str:
+    if source.startswith("gh:"):
+        return f"https://github.com/{source[len('gh:') :].strip('/')}"
+    return source
+
+
+def template_source(args: argparse.Namespace) -> str:
+    if args.template_source:
+        return normalize_template_source(args.template_source)
+    if args.local:
+        return str(PLATFORM_ROOT)
+    return canonical_template_source(args.owner)
+
+
+def answers_source(args: argparse.Namespace) -> str:
+    if args.template_source:
+        return normalize_template_source(args.template_source)
+    return canonical_template_source(args.owner)
+
+
+def rewrite_answers_source(destination: Path, source: str) -> None:
+    answers = destination / ".copier-answers.yml"
+    if not answers.is_file():
+        raise SystemExit(f"error: Copier did not write {answers.name} in {destination}")
+    lines = answers.read_text(encoding="utf-8").splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if line.startswith("_src_path:"):
+            lines[index] = f"_src_path: {json.dumps(source)}\n"
+            break
+    else:
+        lines.insert(0, f"_src_path: {json.dumps(source)}\n")
+    answers.write_text("".join(lines), encoding="utf-8")
+
+
 def render(args: argparse.Namespace, plan: Plan) -> Path:
     destination = Path(args.dest or "").expanduser().resolve()
     data = {
@@ -215,22 +257,24 @@ def render(args: argparse.Namespace, plan: Plan) -> Path:
     }
     if args.template == "typescript":
         data["enable_sentry"] = "true" if args.enable_sentry else "false"
-    if args.template_source:
-        source = args.template_source
-    elif args.local:
-        source = str(PLATFORM_ROOT)
-    else:
-        source = f"gh:{args.owner}/dev-platform"
+    source = template_source(args)
     argv = ["uvx", f"copier@{COPIER_VERSION}", "copy", "--defaults"]
     if args.force:
         argv.append("--force")
     if args.template_ref:
         argv.extend(["--vcs-ref", args.template_ref])
+    elif args.local:
+        # A local checkout must render its current commit, not whatever tag is newest.
+        argv.extend(["--vcs-ref", "HEAD"])
     for key, value in data.items():
         argv.extend(["--data", f"{key}={value}"])
     argv.extend([source, str(destination)])
     plan.run(argv)
     if not plan.dry_run:
+        answer_source = answers_source(args)
+        if answer_source != source:
+            rewrite_answers_source(destination, answer_source)
+            log(f"answers source normalized: {answer_source}")
         log(f"rendered {args.template} template: {destination}")
     return destination
 
@@ -243,12 +287,31 @@ def ensure_git_repository(root: Path, plan: Plan) -> None:
     plan.run(["git", "commit", "-m", "chore: initial commit"], cwd=root)
 
 
+def mise_task_names(root: Path) -> set[str]:
+    result = subprocess.run(
+        ["mise", "tasks", "--name-only"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return set()
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
 def install_pre_commit(root: Path, plan: Plan) -> None:
     if not plan.dry_run and not (root / ".pre-commit-config.yaml").is_file():
         return
     if (root / "mise.toml").is_file() or plan.dry_run:
         plan.run(["mise", "trust"], cwd=root)
         plan.run(["mise", "install"], cwd=root)
+        if plan.dry_run:
+            print("+ mise run prepare  # when mise.toml defines a prepare task")
+        elif "prepare" in mise_task_names(root):
+            plan.run(["mise", "run", "prepare"], cwd=root)
+            log("stack dependencies prepared: mise run prepare")
+        else:
+            log("no mise prepare task; no stack dependencies to install before the hook")
         plan.run(["mise", "exec", "--", "pre-commit", "install"], cwd=root)
     else:
         plan.run(["uvx", f"pre-commit@{PRE_COMMIT_VERSION}", "install"], cwd=root)
@@ -268,11 +331,42 @@ def repository_exists(plan: Plan, repo: str) -> bool:
     return result.returncode == 0
 
 
+def github_remote_slug(url: str) -> str | None:
+    value = url.strip().rstrip("/")
+    for prefix in ("https://github.com/", "http://github.com/", "ssh://git@github.com/"):
+        if value.startswith(prefix):
+            value = value[len(prefix) :]
+            break
+    else:
+        if value.startswith("git@github.com:"):
+            value = value[len("git@github.com:") :]
+        else:
+            return None
+    if value.endswith(".git"):
+        value = value[: -len(".git")]
+    parts = value.split("/")
+    if len(parts) != 2 or not all(parts):
+        return None
+    return f"{parts[0]}/{parts[1]}".lower()
+
+
+def origin_url(root: Path) -> str | None:
+    result = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
 def ensure_remote_repository(
     args: argparse.Namespace, root: Path, repo: str, plan: Plan
 ) -> bool:
     if plan.dry_run:
-        plan.run(["gh", "repo", "view", repo, "--json", "name"])
+        print(f"+ gh repo view {repo} --json name  # when it exists, require origin == {repo}")
         if not args.create_repo:
             print(f"# assume {repo} exists because --no-create-repo was passed")
             return True
@@ -290,7 +384,23 @@ def ensure_remote_repository(
         )
         return True
     if repository_exists(plan, repo):
-        log(f"repository exists: {repo}")
+        url = origin_url(root)
+        slug = github_remote_slug(url) if url else None
+        if url is None:
+            raise SystemExit(
+                f"error: {repo} already exists, but {root} has no git 'origin' remote.\n"
+                "Refusing to apply settings to a repository this checkout never pushed.\n"
+                "Clone the existing repository or add the matching remote, then re-run:\n"
+                f"  git clone https://github.com/{repo}.git {root}\n"
+                f"  # or: git -C {root} remote add origin https://github.com/{repo}.git"
+            )
+        if slug != repo.lower():
+            raise SystemExit(
+                f"error: {root} has origin {url!r}, which does not resolve to {repo}.\n"
+                "Refusing to apply repository settings to an unrelated remote.\n"
+                f"Clone {repo} or correct 'origin', then re-run."
+            )
+        log(f"repository exists and origin matches: {repo}")
         return True
     if not args.create_repo:
         notice(f"{repo} does not exist; repository creation disabled")
