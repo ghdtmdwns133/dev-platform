@@ -62,6 +62,6 @@ repos:
         entry: uvx --from git+https://github.com/{{ owner }}/dev-platform@{{ platform_ref }}#subdirectory=cli devctl unity integrity
         language: system
         pass_filenames: false
-        files: '^ProjectSettings/ProjectVersion\.txt$'
+        files: '^(Assets|Packages|ProjectSettings)/'
 {% endif %}
 # Generated from the dev-platform Copier template.
