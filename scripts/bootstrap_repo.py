@@ -244,7 +244,7 @@ def ensure_git_repository(root: Path, plan: Plan) -> None:
 
 
 def install_pre_commit(root: Path, plan: Plan) -> None:
-    if not (root / ".pre-commit-config.yaml").is_file():
+    if not plan.dry_run and not (root / ".pre-commit-config.yaml").is_file():
         return
     plan.run(
         ["uvx", f"pre-commit@{PRE_COMMIT_VERSION}", "install"],
@@ -487,7 +487,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.enable_codecov:
         set_codecov_secret(repo, plan)
     provision_sentry(args, repo, plan)
-    log(f"bootstrap complete: {repo}")
+    log(f"{'bootstrap plan complete' if plan.dry_run else 'bootstrap complete'}: {repo}")
     return 0
 
 
