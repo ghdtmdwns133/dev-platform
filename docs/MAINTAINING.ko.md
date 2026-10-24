@@ -124,6 +124,8 @@ gh api repos/actions/checkout/git/tags/<sha> --jq .object.sha   # annotated 태�
 
 **Python/Node/.NET.** 생성 저장소는 각 `mise.toml`의 `[tools]`가 정본이다. 템플릿의 `global.json`, devcontainer 이미지 태그, `packageManager`/`engines`도 같은 버전대를 가리켜야 한다. 플랫폼 자체는 루트 `mise.toml`을 따른다.
 
+**pre-commit 핀.** 템플릿의 `[tools]`는 `"pypi:pre-commit" = { version = "4.7.0", python = "3.12" }`를 쓴다. 짧은 `pre-commit` 이름은 mise가 standalone `pre-commit-4.7.0.pyz` backend로 해석해 `python` 옵션을 무시하고, .NET devcontainer의 ambient Python에서 `ModuleNotFoundError: No module named 'shutil'`를 낼 수 있다. `python = "3.12"`만 추가하는 것으로는 해결되지 않으며, `pypi:` 접두사로 PyPI/uv backend를 강제해야 한다.
+
 ## 5. 템플릿 변경
 
 - `copier.yml`의 질문 이름과 기본값은 `.copier-answers.yml`과 `copier update`의 계약이다. 이름을 바꾸면 기존 저장소의 답변 파일이 깨지므로 `v2` 대상이다.
