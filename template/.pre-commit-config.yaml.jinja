@@ -9,25 +9,25 @@ repos:
       - id: check-toml
       - id: check-yaml
       - id: end-of-file-fixer
-{% if stack == 'unity' -%}
+{% if stack == 'unity' %}
         exclude: '\.(unity|prefab|asset|mat|controller|overrideController|inputactions|playable|anim)$'
-{% endif -%}
+{% endif %}
       - id: trailing-whitespace
-{% if stack == 'unity' -%}
+{% if stack == 'unity' %}
         exclude: '\.(unity|prefab|asset|mat|controller|overrideController|inputactions|playable|anim)$'
-{% endif -%}
+{% endif %}
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
       - id: gitleaks-system
-{% if stack == 'python' -%}
+{% if stack == 'python' %}
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.17.2
     hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
-{% elif stack == 'typescript' -%}
+{% elif stack == 'typescript' %}
   - repo: local
     hooks:
       - id: tsc
@@ -44,9 +44,8 @@ repos:
         name: prettier
         entry: npx prettier --check
         language: system
-        files: '\.(ts|tsx|js|mjs|json|css|html|md)$'
-        exclude: '^package-lock\.json$'
-{% elif stack == 'dotnet' -%}
+        files: '^(src/.*\.(ts|tsx|js|mjs|json|css|html|md)|index\.html)$'
+{% elif stack == 'dotnet' %}
   - repo: local
     hooks:
       - id: dotnet-format
@@ -54,7 +53,7 @@ repos:
         entry: dotnet format DevFlow.slnx --verify-no-changes --severity warn --include
         language: system
         files: '\.cs$'
-{% elif stack == 'unity' -%}
+{% elif stack == 'unity' %}
   - repo: local
     hooks:
       - id: unity-integrity

@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-{% if stack == 'unity' -%}
+{% if stack == 'unity' %}
       security-events: write
       actions: read
     uses: {{ owner }}/dev-platform/.github/workflows/unity.yml@{{ platform_ref }}
@@ -31,7 +31,7 @@ jobs:
       UNITY_LICENSE: {% raw %}${{ secrets.UNITY_LICENSE }}{% endraw %}
       UNITY_EMAIL: {% raw %}${{ secrets.UNITY_EMAIL }}{% endraw %}
       UNITY_PASSWORD: {% raw %}${{ secrets.UNITY_PASSWORD }}{% endraw %}
-{% else -%}
+{% else %}
     uses: {{ owner }}/dev-platform/.github/workflows/nightly.yml@{{ platform_ref }}
     with:
       working-directory: "."

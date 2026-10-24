@@ -38,7 +38,7 @@ jobs:
       release-type: {{ release_type }}
       rebuild-tag: {% raw %}${{ github.event_name == 'workflow_dispatch' && inputs.rebuild-tag || '' }}{% endraw %}
       profile: {{ stack }}
-{% if stack == 'unity' -%}
+{% if stack == 'unity' %}
       build-command: uvx --from git+https://github.com/{{ owner }}/dev-platform@{{ platform_ref }}#subdirectory=cli devctl unity build; Compress-Archive -Path artifacts/unity-build/* -DestinationPath artifacts/{{ project_name | lower | replace(' ', '-') }}.zip -Force
       artifact-path: artifacts/*.zip
       artifact-name: unity-build
@@ -48,17 +48,17 @@ jobs:
       unity_build_api_key: {% raw %}${{ secrets.UNITY_BUILD_API_KEY }}{% endraw %}
       unity_build_org_id: {% raw %}${{ secrets.UNITY_BUILD_ORG_ID }}{% endraw %}
       unity_build_project_id: {% raw %}${{ secrets.UNITY_BUILD_PROJECT_ID }}{% endraw %}
-{% elif stack == 'typescript' -%}
+{% elif stack == 'typescript' %}
       build-command: npm ci && npm run build && zip -r dist.zip dist
       artifact-path: dist.zip
       artifact-name: dist
       platform-ref: {{ platform_ref }}
-{% elif stack == 'python' -%}
+{% elif stack == 'python' %}
       build-command: uv build --out-dir dist
       artifact-path: dist
       artifact-name: dist
       platform-ref: {{ platform_ref }}
-{% elif stack == 'dotnet' -%}
+{% elif stack == 'dotnet' %}
       build-command: dotnet pack DevFlow.slnx -c Release -o dist
       artifact-path: dist
       artifact-name: dist

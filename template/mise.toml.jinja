@@ -1,16 +1,16 @@
 [tools]
-{% if stack == 'python' -%}
+{% if stack == 'python' %}
 python = "3.12"
-{% elif stack == 'typescript' -%}
+{% elif stack == 'typescript' %}
 node = "22"
-{% elif stack == 'dotnet' -%}
+{% elif stack == 'dotnet' %}
 dotnet = "10.0.401"
-{% endif -%}
+{% endif %}
 uv = "0.12.21"
 pre-commit = "4.7.0"
 "aqua:gitleaks/gitleaks" = "8.30.1"
 
-{% if stack == 'python' -%}
+{% if stack == 'python' %}
 [tasks.check]
 run = [
   "uv sync --frozen",
@@ -22,7 +22,7 @@ run = "uv run --frozen pytest -q --cov --cov-report=xml:coverage/coverage.xml --
 
 [tasks.build]
 run = "uv build --out-dir dist"
-{% elif stack == 'typescript' -%}
+{% elif stack == 'typescript' %}
 [tasks.check]
 run = [
   "npm ci --no-audit --no-fund",
@@ -40,7 +40,7 @@ run = [
   "npm ci --no-audit --no-fund",
   "npm run build",
 ]
-{% elif stack == 'dotnet' -%}
+{% elif stack == 'dotnet' %}
 [tasks.check]
 run = [
   "dotnet restore DevFlow.slnx",
@@ -52,7 +52,7 @@ run = "dotnet test DevFlow.slnx --collect:\"XPlat Code Coverage\" --results-dire
 
 [tasks.build]
 run = "dotnet pack DevFlow.slnx -c Release -o dist"
-{% else -%}
+{% else %}
 [tasks.check]
 run = "pre-commit run --all-files"
 {% endif %}

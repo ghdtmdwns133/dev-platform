@@ -24,15 +24,15 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-{% if stack == 'unity' -%}
+{% if stack == 'unity' %}
           { "context": "platform-verify / integrity" },
           { "context": "platform-verify / tests" },
-{% else -%}
+{% else %}
           { "context": "platform-verify / check" },
-{% if stack != 'other' -%}
+{% if stack != 'other' %}
           { "context": "platform-verify / test" },
-{% endif -%}
-{% endif -%}
+{% endif %}
+{% endif %}
           { "context": "platform-security / scan" }
         ]
       }
