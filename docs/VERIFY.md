@@ -9,7 +9,7 @@ second, hidden gate.
 | `python`     | `mise run check`, `mise run test`, `mise run build`       | the same mise tasks in `ci.yml`           |
 | `typescript` | `mise run check`, `mise run test`, `mise run build`       | the same mise tasks in `ci.yml`           |
 | `dotnet`     | `mise run check`, `mise run test`, `mise run build`       | the same mise tasks in `ci.yml`           |
-| `unity`      | `mise run check` and `devctl verify --profile unity`      | `unity.yml` (`integrity` and `tests`)     |
+| `unity`      | `mise run check` and `devctl verify --profile unity`      | `unity.yml` (`integrity`, `tests`) plus optional `ci.yml` check caller |
 | `other`      | `mise run check`                                           | `ci.yml` with tests disabled              |
 
 `check`, `test` and `build` live in the generated `mise.toml`. `check` runs
@@ -143,13 +143,16 @@ the `codecov_token` secret is present; an enabled job without a token prints a
 `::warning::`, and a disabled job prints a `::notice::`. `security.yml` runs
 independently and produces `platform-security / scan`.
 
-Unity callers use `unity.yml` only. Its `integrity` job runs
+Unity gates run through `unity.yml`. Its `integrity` job runs
 `devctl verify --profile unity-assets` on `ubuntu-latest` and uploads
 `reports-unity-assets`; the `tests` job runs on the self-hosted Windows runner
 with `devctl verify --profile unity` and uploads coverage to Codecov when the
 token is present. GameCI test results and build zips have their own artifacts.
-The caller never produces `platform-verify / check`, so that name must not
-appear in a Unity repository's required checks.
+A Unity repository can also add a `platform-check` caller that invokes `ci.yml`
+with `run-tests: false`; `project-delta` does, producing
+`platform-check / check`. The Unity caller itself never produces
+`platform-verify / check`, so that name must not appear in a Unity repository's
+required checks.
 
 `actions/security-scan` is the only security runner; it is not a `devctl`
 subcommand. Its version pins live in the composite action and are updated by

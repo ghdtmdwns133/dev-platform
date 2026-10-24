@@ -44,8 +44,10 @@ the `unity-build` artifact. Callers enable it on tags and nightly runs.
 
 Job and check names: the Unity caller names its job `platform-verify`, so the
 checks are `platform-verify / integrity` and `platform-verify / tests`.
-`platform-verify / check` does not exist for Unity repositories because they do
-not call `ci.yml`.
+`platform-verify / check` does not exist for Unity repositories. A Unity
+repository that also wants the `mise run check` gate adds a `platform-check`
+caller that invokes `ci.yml` with `run-tests: false`; `project-delta` does,
+producing `platform-check / check`.
 
 ## Self-hosted runner
 

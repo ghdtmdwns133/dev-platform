@@ -90,7 +90,9 @@ For an existing repository, add the generated surfaces explicitly:
 3. `.devplatform/config.json` for a Unity repository (profile, coverage floor,
    scene and integrity settings).
 4. Caller workflows: `ci.yml` for non-Unity, or `ci.yml` that calls `unity.yml`
-   for Unity, plus `security.yml`, `nightly.yml` and `release.yml` as needed.
+   for Unity (optionally plus a `platform-check` caller using `ci.yml` with
+   `run-tests: false`), plus `security.yml`, `nightly.yml` and `release.yml` as
+   needed.
 5. `renovate.json` with `"extends": ["github>ghdtmdwns133/dev-platform"]`.
 6. `release-please-config.json` and `.release-please-manifest.json` when the
    repository uses release-please.
@@ -99,9 +101,14 @@ For an existing repository, add the generated surfaces explicitly:
    absent.
 
 For the existing `project-delta` repository, the Unity surfaces are the
-`.devplatform/config.json` file and the caller `ci.yml` that calls `unity.yml`
-with `unity-runner: self-hosted`. It is EditMode-only (`unity.testPlatforms` is
+`.devplatform/config.json` file, the caller `ci.yml` that calls `unity.yml`
+with `unity-runner: self-hosted`, and the `platform-check` caller that invokes
+`ci.yml` with `run-tests: false`. It is EditMode-only (`unity.testPlatforms` is
 `["EditMode"]`). Do not add `.copier-answers.yml`.
+
+For `project-delta`, verify the actual checks after the first run and include
+`platform-check / check` alongside the two Unity checks in the ruleset if the
+`platform-check` caller is present.
 
 Reconcile an existing repository with the same bootstrap, omitting `--template`:
 
@@ -131,11 +138,16 @@ gh api repos/ghdtmdwns133/<repo>/commits/main/check-runs \
 | --------------- | --------------- |
 | `python`, `typescript`, `dotnet` | `platform-verify / check`, `platform-verify / test`, `platform-security / scan` |
 | `other` | `platform-verify / check`, `platform-security / scan` (no test task) |
-| Unity | `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan` |
+| Unity with only `unity.yml` | `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan` |
+| Unity also calling `ci.yml` with `run-tests: false` (project-delta) | `platform-check / check` plus the three Unity checks above |
 
-Unity repositories call only `unity.yml`; they never produce
-`platform-verify / check`. Do not put that name in a Unity ruleset: an absent
-required check blocks every pull request.
+Unity repositories use `unity.yml` for the Unity gates and never produce
+`platform-verify / check`. A repository that also wants the same `mise run
+check` gate as non-Unity stacks adds a `platform-check` caller that invokes
+`ci.yml` with `run-tests: false`; `project-delta` does this, so its check is
+`platform-check / check`. Do not put `platform-verify / check` in a Unity
+ruleset: that name never appears there and an absent required check blocks
+every pull request.
 
 Never include `notify` or any build/GameCI job that is normally skipped. Confirm
 the names from the command above before writing the ruleset, because a
@@ -173,7 +185,8 @@ JSON
 
 For `other`, omit the `platform-verify / test` context. For a Unity repository,
 replace the first two contexts with `platform-verify / integrity` and
-`platform-verify / tests`. The single bypass is the repository admin role
+`platform-verify / tests`; if it has a `platform-check` caller, add
+`platform-check / check` as well. The single bypass is the repository admin role
 (`actor_id: 5`), so the owner can still push directly while bots and pull
 requests must pass the gates. If a ruleset with the same name exists, update it
 with `PUT repos/.../rulesets/<id>` rather than creating a duplicate.
@@ -211,16 +224,13 @@ The policy lives in [`default.json`](../default.json): `config:recommended`,
 platform auto-merge, auto-merge for minor/patch/digest updates, digest pinning
 for GitHub Actions, weekly lock-file maintenance, and grouped Copier updates.
 
-**Installation is a user authorization step.** Install or authorize the Mend
-Renovate app for the account at <https://github.com/apps/renovate>, granting the
-repositories that should receive PRs. There is no repository evidence that it is
-installed: on 2026-10-24,
-`gh search prs --owner ghdtmdwns133 --app renovate` returned no results. Until
-it is installed, no Renovate PR exists and no dependency auto-merge happens.
-Do not treat this document as proof of an active installation.
-
-Once installed, a repository with `renovate.json` on the default branch skips
-the onboarding PR and starts receiving update PRs. Renovate uses GitHub's native
+**Installation is a user authorization step.** The user confirmed on
+2026-10-24 that the Mend Renovate app is installed for all repositories
+(<https://github.com/apps/renovate>). Actual bot run/PR evidence has not yet
+been verified; check `gh search prs --owner ghdtmdwns133 --app renovate` before
+treating it as active. A repository with `renovate.json` on the default branch
+skips the onboarding PR and, once the app processes it, starts receiving update
+PRs. Renovate uses GitHub's native
 auto-merge (`platformAutomerge`); the repository setting `allow_auto_merge` and
 at least one required status check must exist, or GitHub may merge a PR whose
 checks failed. The `platform-gates` ruleset supplies the checks.
@@ -245,7 +255,8 @@ source as a `git-tags` dependency and uses PEP 440 versioning
 (<https://docs.renovatebot.com/modules/manager/copier/>). It can open update PRs
 only when all of these hold:
 
-- the hosted Renovate app is installed and has access to the repository;
+- the hosted Renovate app has access to the repository (user-confirmed
+  installed; bot evidence pending);
 - the template is referenced as a git source, not a local path; and
 - the platform publishes PEP 440 git tags (`v1.N.0`), not only the moving `v1`
   tag.

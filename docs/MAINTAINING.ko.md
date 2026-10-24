@@ -7,7 +7,7 @@
 | 저장소 | 역할 |
 | --- | --- |
 | `ghdtmdwns133/dev-platform` | Copier 템플릿, 재사용 워크플로, composite action, Unity용 CLI, 문서의 정본. 소비 저장소는 `@v1`로 참조한다. |
-| `ghdtmdwns133/project-delta` | private Unity 프로젝트. `unity.yml`을 self-hosted 러너로 호출한다. |
+| `ghdtmdwns133/project-delta` | private Unity 프로젝트. `unity.yml`을 self-hosted 러너로 호출하고, `ci.yml`을 `run-tests: false`로 호출하는 `platform-check` 작업도 둔다. |
 | `<새 저장소>` | Copier 템플릿으로 생성한 소비 저장소. 비-Unity는 `ci.yml`+`security.yml`, Unity는 `unity.yml`+`security.yml`을 호출한다. |
 
 `dev-platform` 디렉터리의 책임은 다음과 같다.
@@ -102,7 +102,7 @@ flowchart LR
 - `pyproject.toml`, `package.json`, `*.csproj`, lock 파일
 - `.copier-answers.yml`의 템플릿 버전(앱 설치 + `v1.N.0` 태그가 있을 때)
 
-호스티드 Renovate 앱 설치와 저장소 접근 승인은 사용자 조치다. 2026-10-24 기준 이 계정에서 Renovate PR은 확인되지 않았으므로, 설치됐다고 가정하지 않는다. Dependabot 버전 업데이트 설정은 제거됐고 취약점 알림은 유지된다. 별도 auto-merge 워크플로도 없다.
+호스티드 Renovate 앱 설치는 사용자 조치다. 사용자가 2026-10-24에 모든 저장소에 설치했다고 확인했지만, 실제 봇 실행/PR 증거는 아직 검증 전이므로 `gh search prs --owner ghdtmdwns133 --app renovate`로 확인하기 전에는 활성으로 단정하지 않는다. Dependabot 버전 업데이트 설정은 제거됐고 취약점 알림은 유지된다. 별도 auto-merge 워크플로도 없다.
 
 **action SHA.** 태그를 SHA로 해석해 넣고, 주석의 태그를 함께 갱신한다.
 
@@ -180,8 +180,9 @@ gh api repos/ghdtmdwns133/<repo>/commits/main/check-runs --jq '[.check_runs[].na
 - `python`, `typescript`, `dotnet`: `platform-verify / check`, `platform-verify / test`, `platform-security / scan`
 - `other`: `platform-verify / check`, `platform-security / scan` (테스트 태스크 없음)
 - Unity: `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan`
+- `project-delta`: 위 Unity 검사에 `platform-check / check`를 더한다(`ci.yml`을 `run-tests: false`로 호출).
 
-Unity 저장소에는 `platform-verify / check`를 넣지 않는다. 그 작업은 존재하지 않는다. `notify`와 평소 건너뛰는 build/GameCI 작업도 넣지 않는다. ruleset JSON과 `gh api` 명령은 [ADOPTION.md](ADOPTION.md)에 있다. 같은 이름의 ruleset이 있으면 `PUT`으로 갱신한다.
+Unity 저장소에는 `platform-verify / check`를 넣지 않는다. 그 작업은 존재하지 않는다. `mise run check`를 CI에서도 쓰려면 `platform-check` caller를 따로 두고 `platform-check / check`를 넣는다. `notify`와 평소 건너뛰는 build/GameCI 작업도 넣지 않는다. ruleset JSON과 `gh api` 명령은 [ADOPTION.md](ADOPTION.md)에 있다. 같은 이름의 ruleset이 있으면 `PUT`으로 갱신한다.
 
 **시크릿.** Doppler의 `<repo>/ci` 동기화 또는 `gh secret set <NAME> -R ghdtmdwns133/<repo>`를 쓴다. 값은 저장소에 커밋하지 않는다. 새 저장소는 Doppler 동기화를 새로 만들어야 한다. [SECRETS.md](SECRETS.md).
 
@@ -228,7 +229,7 @@ git rev-list -n 1 v1
 
 **체크 이름이 바뀌어 PR이 막힐 때.** 작업 이름을 바꿨다면 ruleset의 `required_status_checks`가 옛 이름을 가리킨다. 실제 이름을 다시 확인해 ruleset을 `PUT`으로 갱신한다.
 
-**Renovate PR이 없을 때.** 앱 설치·승인 여부를 먼저 확인한다. `https://github.com/apps/renovate`에서 저장소 접근을 확인하고, `gh search prs --owner ghdtmdwns133 --app renovate`로 흔적을 본다. 설치 전에는 어떤 설정도 PR을 만들지 않는다. Copier 업데이트는 `v1.N.0` 태그와 `.copier-answers.yml`이 모두 있어야 한다.
+**Renovate PR이 없을 때.** 사용자가 2026-10-24에 앱을 모든 저장소에 설치했다고 확인했지만, 실제 봇 실행 증거는 아직 검증 전이다. `https://github.com/apps/renovate`에서 저장소 접근을 확인하고, `gh search prs --owner ghdtmdwns133 --app renovate`로 흔적을 본다. 접근이 없으면 어떤 설정도 PR을 만들지 않는다. Copier 업데이트는 앱 접근, `v1.N.0` 태그, `.copier-answers.yml`이 모두 있어야 한다.
 
 **릴리스는 있는데 자산이 없을 때.** 자산 빌드만 실패한 경우(PC 꺼짐, 러너 오프라인)는 `rebuild-tag`로 복구한다. release-please·자동 병합·대기 단계를 건너뛰고, 해당 태그를 기준으로 빌드한 뒤 `gh release upload --clobber`로 기존 자산을 교체한다.
 

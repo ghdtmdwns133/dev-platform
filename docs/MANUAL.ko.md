@@ -7,10 +7,10 @@
 push나 PR에서 `platform-verify`와 `platform-security`가 동시에 시작된다. 둘은 서로를 기다리지 않으므로 결함이 있으면 두 검사가 같이 빨간색이 된다.
 
 - 비-Unity 저장소: `platform-verify`가 `ci.yml`을 호출해 `check`와 `test`를 돌린다. 검사 이름은 `platform-verify / check`, `platform-verify / test`다.
-- Unity 저장소(`project-delta`): `platform-verify`가 `unity.yml`만 호출한다. 검사 이름은 `platform-verify / integrity`, `platform-verify / tests`다. `platform-verify / check`는 생기지 않는다.
+- Unity 저장소(`project-delta`): `platform-verify`가 `unity.yml`을 호출해 `platform-verify / integrity`, `platform-verify / tests`를 만들고, `platform-check`가 `ci.yml`을 `run-tests: false`로 호출해 `platform-check / check`를 만든다. `platform-verify / check`는 생기지 않는다.
 - `platform-security`는 모든 저장소에서 trivy·gitleaks·zizmor·actionlint를 돌리고 `platform-security / scan`을 만든다.
 - `main`에 병합되면 release-please가 Release PR을 열고, 그 PR이 병합되면 태그와 릴리스 자산이 만들어진다.
-- Renovate 앱이 설치돼 있으면 의존성·action·Copier 템플릿 갱신 PR이 열린다. 병합 가능 여부는 ruleset `platform-gates`의 필수 검사가 결정한다.
+- Renovate 앱은 사용자가 모든 저장소에 설치했다고 확인했다(2026-10-24). 실제 봇 실행/PR 증거는 아직 확인 전이다. PR이 열리면 병합 가능 여부는 ruleset `platform-gates`의 필수 검사가 결정한다.
 
 ```mermaid
 flowchart LR
@@ -42,7 +42,7 @@ mise run check
 | `dotnet` | dotnet format |
 | `unity` | 공통 pre-commit 훅과 Unity 무결성 검사(에디터 불필요) |
 
-`mise run check`는 모든 파일에 pre-commit을 돌리므로 Unity 무결성 훅도 실행된다. staged 파일만 검사하는 `pre-commit install` 훅은 Unity에서 `ProjectSettings/ProjectVersion.txt`가 바뀔 때만 무결성 검사를 돌린다. 비-Unity에서 `check`는 CI의 `platform-verify / check`와 같은 설정이고, Unity에서는 CI의 `platform-verify / integrity`가 같은 종류의 무결성 검사를 별도로 실행한다. 실패하면 `mise run check`를 직접 다시 돌려 전체 출력을 본다. `--no-verify`로 건너뛸 수는 있지만 CI가 같은 검사를 더 넓게 실행하므로 실패를 미루는 것뿐이다.
+`mise run check`는 모든 파일에 pre-commit을 돌리므로 Unity 무결성 훅도 실행된다. staged 파일만 검사하는 `pre-commit install` 훅은 `Assets/`, `Packages/`, `ProjectSettings/` 중 하나라도 바뀌면 Unity 무결성 검사를 돌린다. 비-Unity에서 `check`는 CI의 `platform-verify / check`와 같은 설정이고, Unity에서는 CI의 `platform-verify / integrity`가 같은 종류의 무결성 검사를 별도로 실행한다. 실패하면 `mise run check`를 직접 다시 돌려 전체 출력을 본다. `--no-verify`로 건너뛸 수는 있지만 CI가 같은 검사를 더 넓게 실행하므로 실패를 미루는 것뿐이다.
 
 ### 2.2 push하고 결과 보기
 
@@ -59,10 +59,10 @@ gh pr checks <pr-number>
 | --- | --- |
 | `python`, `typescript`, `dotnet` | `platform-verify / check`, `platform-verify / test`, `platform-security / scan` |
 | `other` | `platform-verify / check`, `platform-security / scan` (테스트 태스크 없음) |
-| `project-delta` | `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan` |
+| `project-delta` | `platform-check / check`, `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan` |
 | `dev-platform` | `self-test.yml`이 만드는 작업 이름을 첫 초록 실행 뒤 `gh api .../check-runs`로 확인해 사용한다 |
 
-Unity 저장소에 `platform-verify / check`를 넣으면 그 검사는 영원히 나타나지 않아 모든 PR이 막힌다. `notify` 작업도 필수 검사에 넣지 않는다.
+Unity 저장소에 `platform-verify / check`를 넣으면 그 검사는 영원히 나타나지 않아 모든 PR이 막힌다. Unity에서 `mise run check`를 CI에서도 쓰려면 `ci.yml`을 `run-tests: false`로 호출하는 `platform-check` 작업을 따로 두고 그 이름(`platform-check / check`)을 필수 검사에 넣는다. `notify` 작업도 필수 검사에 넣지 않는다.
 
 ### 2.3 실패 이슈(`ci-alert`)
 
@@ -232,7 +232,7 @@ mise run check
 
 `--template`은 `python`, `typescript`, `dotnet`, `unity`, `other` 중 하나다. `--visibility`, `--owner`, `--platform-ref`, `--min-coverage`, `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. GitHub 저장소를 만들지 않고 렌더링만 하려면 `--no-create-repo`를 쓰거나 `uvx copier copy`를 직접 실행한다. 정확한 플래그는 `--help`로 확인한다.
 
-생성되는 주요 파일은 `.copier-answers.yml`, `mise.toml`, `.pre-commit-config.yaml`, `renovate.json`, caller 워크플로(`ci.yml`, `nightly.yml`, `release.yml`), `.github/rulesets/platform-gates.json`, release-please 설정이다. devcontainer는 python/typescript/dotnet에만, `.devplatform/config.json`과 Odin 브리지는 Unity에만 들어간다. Unity 결과물은 완전한 Unity 프로젝트가 아니라 Unity 프로젝트 루트에 놓는 플랫폼 계층이므로, 기존 Unity 프로젝트에 렌더링해 `.devplatform/config.json`을 맞춘다. 기존 저장소를 손으로 붙이는 방법과 ruleset 설정은 [ADOPTION.md](ADOPTION.md)에 있다.
+생성되는 주요 파일은 `.copier-answers.yml`, `mise.toml`, `.pre-commit-config.yaml`, `renovate.json`, caller 워크플로(`ci.yml`, `nightly.yml`, `release.yml`), `.github/rulesets/platform-gates.json`, release-please 설정이다. devcontainer는 python/typescript/dotnet에만, `.devplatform/config.json`과 Odin 브리지는 Unity에만 들어간다. Unity 결과물은 완전한 Unity 프로젝트가 아니라 Unity 프로젝트 루트에 놓는 플랫폼 계층이므로, 기존 Unity 프로젝트에 렌더링해 `.devplatform/config.json`을 맞춘다. Unity에서 `mise run check`를 CI 필수 검사로도 쓰려면 `ci.yml`을 `run-tests: false`로 호출하는 `platform-check` 작업을 추가한다(`project-delta`가 이렇게 한다). 기존 저장소를 손으로 붙이는 방법과 ruleset 설정은 [ADOPTION.md](ADOPTION.md)에 있다.
 
 ## 7. 비용과 한도
 
@@ -255,7 +255,7 @@ gh api /users/ghdtmdwns133/settings/billing/usage/summary
 
 ## 8. 자주 막히는 상황
 
-**PR에 체크가 하나도 안 뜬다.** `docs/**`와 `**/*.md`만 바꾼 PR은 caller의 `paths-ignore` 때문에 CI가 시작되지 않을 수 있다. 코드를 한 줄이라도 섞거나 소유자 권한으로 병합한다. 초안 PR도 검사가 붙지 않는다. Unity 저장소라면 `platform-verify / check`를 기다리지 말고 `integrity`/`tests`가 있는지 본다.
+**PR에 체크가 하나도 안 뜬다.** `docs/**`와 `**/*.md`만 바꾼 PR은 caller의 `paths-ignore` 때문에 CI가 시작되지 않을 수 있다. 코드를 한 줄이라도 섞거나 소유자 권한으로 병합한다. 초안 PR도 검사가 붙지 않는다. Unity 저장소라면 `platform-verify / check`를 기다리지 말고 `integrity`/`tests`와, caller가 있다면 `platform-check / check`가 있는지 본다.
 
 **실행이 `action_required`로 멈춰 있다.** 포크나 첫 기여자의 PR은 워크플로 승인이 필요하다. release PR은 release 잡이 스스로 승인한다. API가 거부하면 PR 화면의 **Approve and run workflows**를 쓴다.
 
@@ -275,9 +275,9 @@ gh api -X POST repos/ghdtmdwns133/<repo>/actions/runs/<run-id>/approve
 
 **CodeScene 체크가 안 보인다.** GitHub App 설치와 CodeScene 프로젝트 생성은 별개다. 앱을 모든 저장소에 설치해도 프로젝트가 자동으로 만들어지지 않는다. [CODESCENE.md](CODESCENE.md)의 절차를 확인한다.
 
-**Renovate PR이 안 생긴다.** 호스티드 앱이 설치·승인되지 않았을 수 있다. `https://github.com/apps/renovate`에서 저장소 접근을 확인한다. 2026-10-24 기준 이 계정에 Renovate PR 흔적은 확인되지 않았다. `renovate.json`이 있어도 앱이 없으면 아무 일도 일어나지 않는다.
+**Renovate PR이 안 생긴다.** 사용자가 2026-10-24에 호스티드 앱을 모든 저장소에 설치했다고 확인했지만, 실제 봇 실행/PR 증거는 아직 검증 전이다. `https://github.com/apps/renovate`에서 저장소 접근과 `gh search prs --owner ghdtmdwns133 --app renovate` 결과를 확인한다. `renovate.json`이 있어도 앱 접근이 없으면 아무 일도 일어나지 않는다.
 
-**Copier 업데이트 PR이 안 생긴다.** Renovate의 Copier 매니저는 `.copier-answers.yml`과 PEP 440 태그(`v1.N.0`)가 있어야 한다. 아직 태그가 없거나 앱이 설치되지 않았다면 로컬에서 `uvx copier update`를 실행하고 diff를 검토한다.
+**Copier 업데이트 PR이 안 생긴다.** Renovate의 Copier 매니저는 앱 접근, `.copier-answers.yml`, PEP 440 태그(`v1.N.0`)가 모두 있어야 한다. 태그가 아직 없거나 봇 실행 증거가 확인되지 않았다면 로컬에서 `uvx copier update --defaults`를 실행하고 diff를 검토한다.
 
 **`mise`가 설정 파일을 신뢰하지 않는다.** 새로 만든 저장소에서는 `mise trust`를 한 번 실행한 뒤 `mise install`을 쓴다.
 

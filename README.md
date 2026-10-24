@@ -24,8 +24,8 @@ same commands and the same configuration.
   `mise run check` runs it on all files locally, and CI runs the same check.
 - **Renovate** — [`default.json`](default.json) is the shared preset
   (`github>ghdtmdwns133/dev-platform`) for dependency updates and action pins.
-  Installing the hosted Renovate app is an account authorization step, not
-  something this repository can do.
+  The user confirmed the hosted Renovate app is installed for all repositories
+  on 2026-10-24; actual bot run/PR evidence is still to be verified.
 - **Unified workflows** — `ci.yml`, `security.yml`, `unity.yml`, `release.yml`
   and `nightly.yml` are reusable, plus `self-test.yml` for the platform itself.
   Dependency PR auto-merge is handled by Renovate; release-please PRs are
@@ -98,10 +98,13 @@ does not contain a complete Unity project.
   check job only, so it has `platform-verify / check` and
   `platform-security / scan`. `security.yml` produces
   `platform-security / scan`.
-- Unity callers call only `unity.yml` (as `platform-verify`), producing
+- Unity callers use `unity.yml` (as `platform-verify`), producing
   `platform-verify / integrity` and, on the self-hosted runner,
-  `platform-verify / tests`. They never produce `platform-verify / check`; do
-  not require an absent check on Unity repositories.
+  `platform-verify / tests`. A repository that also wants the `mise run check`
+  gate adds a `platform-check` caller that invokes `ci.yml` with
+  `run-tests: false`; `project-delta` does, producing `platform-check / check`.
+  Unity repositories never produce `platform-verify / check`; do not require
+  that absent check.
 - The check job runs `mise run check`; the test job runs `mise run test` and
   uploads `coverage/` as an artifact. Codecov uploads only when the job is
   enabled and a token is present; an enabled job with no token prints a
@@ -111,9 +114,9 @@ does not contain a complete Unity project.
 - Failures open or update an issue labeled `ci-alert` with the workflow, job,
   commit and run URL. The Unity notification also includes
   `devctl verify --profile unity` as the local repro command.
-- Renovate opens dependency and action-update PRs when the hosted app is
-  installed; auto-merge uses GitHub's native auto-merge and the required checks
-  from the ruleset. Release PRs are handled by `release.yml`.
+- Renovate opens dependency and action-update PRs once the installed app
+  processes the repository; auto-merge uses GitHub's native auto-merge and the
+  required checks from the ruleset. Release PRs are handled by `release.yml`.
 - Unity runs on the private repository's self-hosted Windows runner, through
   GameCI only with a supported license, or through Unity Build Automation.
 
