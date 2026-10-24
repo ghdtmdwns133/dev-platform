@@ -246,10 +246,12 @@ def ensure_git_repository(root: Path, plan: Plan) -> None:
 def install_pre_commit(root: Path, plan: Plan) -> None:
     if not plan.dry_run and not (root / ".pre-commit-config.yaml").is_file():
         return
-    plan.run(
-        ["uvx", f"pre-commit@{PRE_COMMIT_VERSION}", "install"],
-        cwd=root,
-    )
+    if (root / "mise.toml").is_file() or plan.dry_run:
+        plan.run(["mise", "trust"], cwd=root)
+        plan.run(["mise", "install"], cwd=root)
+        plan.run(["mise", "exec", "--", "pre-commit", "install"], cwd=root)
+    else:
+        plan.run(["uvx", f"pre-commit@{PRE_COMMIT_VERSION}", "install"], cwd=root)
     if not plan.dry_run:
         log("pre-commit hook installed")
 
