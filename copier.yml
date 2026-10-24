@@ -113,6 +113,10 @@ _exclude:
     /.release-please-manifest.json
     {% endif %}
   - |
+    {% if stack == 'unity' and visibility == 'public' %}
+    /.github/workflows/release.yml
+    {% endif %}
+  - |
     {% if _copier_operation == 'update' %}
     /README.md
     {% if stack == 'python' %}
