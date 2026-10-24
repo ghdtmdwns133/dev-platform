@@ -147,13 +147,9 @@ _exclude:
 _message_after_copy: |
   Rendered {{ project_name }} ({{ stack }}) with the dev-platform template.
 
-  Next steps:
-    1. cd into the generated directory.
-    2. mise trust && mise install
-    3. mise run check
-  {% if create_github_repo %}
-    4. Create the GitHub repository and apply its settings:
-       uv run --script {{ _copier_conf.src_path }}/scripts/bootstrap_repo.py --root . --owner {{ owner }} --name {{ project_name }} --visibility {{ visibility }}{% if enable_sentry %} --enable-sentry{% endif %}
-  {% endif %}
+  Direct Copier renders are offline: they do not create a GitHub repository or
+  apply repository settings. To create or configure the repository, run the
+  bootstrap documented in dev-platform's docs/ADOPTION.md from a retained
+  dev-platform checkout; the bootstrap reports what it completed.
 
   Renovate keeps the template up to date after the repository is onboarded.
