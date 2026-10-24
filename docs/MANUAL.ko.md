@@ -39,6 +39,8 @@ mise exec -- pre-commit install
 mise run check
 ```
 
+`project-delta`에는 같은 훅 설치를 감싼 `mise run hooks` 태스크도 있다. 생성 템플릿에는 이 태스크가 없으므로 `mise exec -- pre-commit install`을 쓴다.
+
 | 스택 | check가 실행하는 것 |
 | --- | --- |
 | `python` | ruff check, ruff format |
