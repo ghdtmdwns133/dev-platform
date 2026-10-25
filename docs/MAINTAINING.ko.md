@@ -60,19 +60,27 @@ flowchart LR
    gh run view <run-id> --log-failed
    ```
 
-4. `main`이 초록이면 새 불변 태그를 만들고 `v1`을 옮긴다. 초록이 아닌 커밋으로는 옮기지 않는다.
+4. `main`이 초록이면 **alias first, version last** 순서로 태그를 만든다. 초록이 아닌 커밋으로는 옮기지 않는다.
 
    ```bash
    git switch main && git pull --ff-only
-   git tag -a v1.1.0 -m "platform v1.1.0" main
-   git push origin v1.1.0
+
+   # 1) 이동 태그(v1)를 먼저 만든다.
    git tag -f -a v1 -m "platform v1: v1.1.0" main
    git push origin refs/tags/v1 --force
+
+   # 2) 불변 버전 태그를 나중에, taggerdate가 더 크게 만든다.
+   git tag -a v1.1.0 -m "platform v1.1.0" main
+   git push origin v1.1.0
+
+   # 3) Copier가 버전 태그를 고르는지 확인한 뒤에만 배포한다.
+   git describe --tags --always "$(git rev-list -n 1 v1.1.0)"
+   # 출력이 v1.1.0이어야 한다.
    git rev-list -n 1 v1
    git rev-list -n 1 v1.1.0
    ```
 
-   두 SHA를 [ADOPTION.md](ADOPTION.md)의 태그 표에 기록한다. `v1`은 항상 최신 호환 템플릿/워크플로를 가리키고, `v1.N.0`은 절대 이동하지 않는다.
+   두 태그가 같은 초에 만들어지면 `git describe`가 엉뚱한 태그를 고를 수 있으므로, 버전 태그를 만들 때 `GIT_COMMITTER_DATE`로 1초 뒤를 지정하거나 잠시 기다린다. `git describe`가 `v1.1.0`을 반환하기 전에는 배포하지 않는다. 태그 객체 SHA와 커밋 SHA를 [ADOPTION.md](ADOPTION.md)의 표에 기록한다. `v1`은 항상 최신 호환 템플릿/워크플로를 가리키고, `v1.N.0`은 절대 이동하지 않는다. 문서 커밋 뒤에는 태그를 이동하지 않는다.
 
 5. 소비 저장소를 다시 돌려 새 태그를 소비했는지 확인한다.
 

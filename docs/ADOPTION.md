@@ -337,13 +337,20 @@ Two tag families have different jobs:
 The integration owner creates and moves these tags; no slice does. Record the
 SHA when a tag is created or moved, and keep the table current:
 
-| Tag | Commit SHA | Date | Notes |
-| --- | ---------- | ---- | ----- |
-| `v1` | `b6ee2db283ea63b5c99b3c4e89540332a06f871a` | 2026-10-25 | Moving tag; callers resolve it. Points at the same commit as `v1.1.0`. |
-| `v1.1.0` | `b6ee2db283ea63b5c99b3c4e89540332a06f871a` | 2026-10-25 | Immutable Copier/Renovate template version. |
+| Tag | Tag object | Commit SHA | Date | Notes |
+| --- | ---------- | ---------- | ---- | ----- |
+| `v1` | `965871597f74be1dd97535e30232dad33b2c8c9c` | `b6ee2db283ea63b5c99b3c4e89540332a06f871a` | 2026-10-25 | Moving alias; callers resolve it. Created **first**. |
+| `v1.1.0` | `6b5fcc233441b44ba3addda92a610846a314a21b` | `b6ee2db283ea63b5c99b3c4e89540332a06f871a` | 2026-10-26 | Immutable Copier/Renovate version. Created **last**, with a strictly later taggerdate. |
+
+`git describe --tags --always b6ee2db283ea63b5c99b3c4e89540332a06f871a`
+returns `v1.1.0`; Copier reports template version `1.1.0`.
 
 Every consumer must use a `v1` or `v1.N.0` whose workflows, template and CLI are
-consistent. Do not move `v1` to a red commit.
+consistent. Do not move `v1` to a red commit. The release procedure is
+**alias first, version last**: update annotated `v1`, then create the immutable
+`v1.N.0` with a strictly later taggerdate, assert `git describe` selects the
+version tag, and only then publish. Do not move tags after the documentation
+commit.
 
 ## Secrets and services
 
