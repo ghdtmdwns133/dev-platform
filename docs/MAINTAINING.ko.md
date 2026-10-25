@@ -38,7 +38,7 @@ flowchart LR
 - **단일 인터페이스.** 비-Unity는 `mise run check`와 `mise run test`가 로컬과 CI의 유일한 명령이다. Unity는 `devctl`이 그 역할을 한다. `devctl verify`는 `unity`와 `unity-assets` 프로필만 받는다. `versions.json`, `devctl init`, `devctl hooks`, `devctl versions`는 없다.
 - **템플릿 전파.** 새 저장소는 `scripts/bootstrap_repo.py`로 만들고 `.copier-answers.yml`을 남긴다. 이후 변경은 `copier update`로 적용한다. 템플릿은 `_tasks`·Jinja 확장·마이그레이션을 쓰지 않는 pure-safe 형태로 유지한다. 그래야 호스티드 Renovate가 스크립트 권한 없이 Copier 업데이트 PR을 만들 수 있다.
 - **버전 핀.** 생성 저장소의 도구 버전은 각 `mise.toml`의 `[tools]`에 있다. 플랫폼 자체 도구는 루트 `mise.toml`에 있고, GitHub Actions는 40자 SHA와 `# v4` 태그 주석으로 고정한다. `zizmor.yml`은 `ghdtmdwns133/*`만 태그 참조를 허용하고 나머지는 `hash-pin`을 요구한다.
-- **태그 두 종류.** `v1`은 caller의 `uses:`/`platform_ref`가 쓰는 이동 태그다. `v1.N.0`은 Copier와 Renovate가 쓰는 PEP 440 불변 태그다. 태그가 가리키는 SHA는 [ADOPTION.md](ADOPTION.md)의 표에 기록한다.
+- **태그 두 종류.** `v1`은 caller의 `uses:`/`platform_ref`가 쓰는 이동 태그다. `v1.N.0`은 Copier와 Renovate가 쓰는 PEP 440 불변 태그다. 게시는 두 ref를 한 번에(`git push --atomic`) 하고 불변 태그에는 force를 쓰지 않는다(§3). 태그가 가리키는 SHA는 [ADOPTION.md](ADOPTION.md)의 표에 기록한다.
 - **스택 고정.** 지원 스택은 `python`, `typescript`, `dotnet`, `unity`와 스택 비종속 `other`뿐이다. 새 언어·엔진 지원은 이 저장소의 범위가 아니다.
 
 ## 3. 일상 유지보수 절차
@@ -60,27 +60,33 @@ flowchart LR
    gh run view <run-id> --log-failed
    ```
 
-4. `main`이 초록이면 **alias first, version last** 순서로 태그를 만든다. 초록이 아닌 커밋으로는 옮기지 않는다.
+4. `main`이 초록이면 **alias first, version last** 순서로 태그를 만든다. 초록이 아닌 커밋으로는 옮기지 않는다. 게시 전에는 로컬에서만 만들고, `git describe` 단정을 통과한 뒤 두 ref를 한 번에 push한다.
 
    ```bash
    git switch main && git pull --ff-only
 
-   # 1) 이동 태그(v1)를 먼저 만든다.
-   git tag -f -a v1 -m "platform v1: v1.1.0" main
-   git push origin refs/tags/v1 --force
+   # 1) 이동 태그(v1)를 먼저, 로컬에서만 만든다. 아직 push하지 않는다.
+   git tag -f -a v1 -m "platform v1: v1.2.0" main
 
-   # 2) 불변 버전 태그를 나중에, taggerdate가 더 크게 만든다.
-   git tag -a v1.1.0 -m "platform v1.1.0" main
-   git push origin v1.1.0
+   # 2) 1초 뒤에 불변 버전 태그를 만든다(taggerdate가 엄격히 더 크게).
+   #    직전 릴리스가 v1.1.0이므로 다음 버전은 v1.2.0이다.
+   sleep 1
+   git tag -a v1.2.0 -m "platform v1.2.0" main
 
-   # 3) Copier가 버전 태그를 고르는지 확인한 뒤에만 배포한다.
-   git describe --tags --always "$(git rev-list -n 1 v1.1.0)"
-   # 출력이 v1.1.0이어야 한다.
+   # 3) push 전에 git describe가 버전 태그를 고르는지 단정한다.
+   #    이 명령이 0이 아니면 아래 push를 실행하지 않는다.
+   test "$(git describe --tags "$(git rev-list -n 1 v1.2.0)")" = "v1.2.0"
    git rev-list -n 1 v1
-   git rev-list -n 1 v1.1.0
+   git rev-list -n 1 v1.2.0
+
+   # 4) 단정을 통과한 뒤에만 두 ref를 원자적으로 게시한다.
+   #    force는 이동 별칭에만 붙이고, 불변 버전 태그에는 붙이지 않는다.
+   git push --atomic origin +refs/tags/v1 refs/tags/v1.2.0
    ```
 
-   두 태그가 같은 초에 만들어지면 `git describe`가 엉뚱한 태그를 고를 수 있으므로, 버전 태그를 만들 때 `GIT_COMMITTER_DATE`로 1초 뒤를 지정하거나 잠시 기다린다. `git describe`가 `v1.1.0`을 반환하기 전에는 배포하지 않는다. 태그 객체 SHA와 커밋 SHA를 [ADOPTION.md](ADOPTION.md)의 표에 기록한다. `v1`은 항상 최신 호환 템플릿/워크플로를 가리키고, `v1.N.0`은 절대 이동하지 않는다. 문서 커밋 뒤에는 태그를 이동하지 않는다.
+   `git push --atomic`은 두 ref를 모두 갱신하거나 모두 거부하므로, 별칭만 먼저 게시되어 불변 버전이 없는 구간이 생기지 않는다. `+`는 `v1`에만 있고 불변 태그에는 없으므로 서버는 기존 `v1.N.0`을 덮어쓰는 push를 거부한다. 단정이 실패하면 아무것도 게시되지 않았으므로 로컬 태그를 지우고(`git tag -d v1 v1.2.0`) `git fetch --tags --force`로 게시된 `v1`을 복원한 뒤, 대상 커밋과 시각을 고쳐 다시 만든다. 이미 게시된 불변 버전 태그는 다시 주석 달거나 이동하지 않는다.
+
+   두 태그가 같은 초에 만들어지면 `git describe`가 엉뚱한 태그를 고를 수 있으므로, 버전 태그를 만들 때 `GIT_COMMITTER_DATE`로 1초 뒤를 지정하거나 위처럼 `sleep 1`로 기다린다. 이 대기는 로컬 taggerdate의 초 단위 순서를 보장하기 위한 것이고, 원격 API를 재조회하는 절차가 아니다. `git describe`의 출력이 새 버전 태그와 같지 않으면 push하지 않는다. 태그 객체 SHA와 커밋 SHA를 [ADOPTION.md](ADOPTION.md)의 표에 기록한다. `v1`은 항상 최신 호환 템플릿/워크플로를 가리키고, `v1.N.0`은 절대 이동하지 않는다. 문서 커밋 뒤에는 태그를 이동하지 않는다.
 
 5. 소비 저장소를 다시 돌려 새 태그를 소비했는지 확인한다.
 
@@ -233,13 +239,13 @@ uv run --project C:/dev/dev-platform/cli devctl unity integrity --write-baseline
 gh run download <run-id> -n reports-unity-assets -D artifacts/ci-reports
 ```
 
-**태그를 잘못 옮겼을 때.** `v1`만 이전 커밋으로 되돌린다. `v1.N.0`은 이동하지 않는다.
+**릴리스 태그를 잘못 만들었을 때.** 이 저장소는 Copier 템플릿과 재사용 워크플로를 함께 배포한다. 게시된 `v1`을 더 오래된 semver 커밋으로 되돌리면 그 커밋에서 `git describe`가 고르는 버전과 별칭이 가리키는 내용이 어긋나 Copier provenance가 깨진다. 그래서 뒤로 미는 롤백 대신 **앞으로 고치는** 절차를 쓴다.
 
-```bash
-git tag -f -a v1 -m "platform v1: rollback" <previous-sha>
-git push origin refs/tags/v1 --force
-git rev-list -n 1 v1
-```
+1. 결함을 고치는 커밋(또는 되돌리기 커밋)을 `main`에 넣고 `self-test.yml`을 초록으로 만든다.
+2. §3의 alias first, version last 절차로 새 불변 버전(예: `v1.2.1`)을 만들고, `git describe` 단정을 통과한 뒤 두 ref를 `git push --atomic`으로 함께 게시한다.
+3. 소비 저장소가 새 태그를 소비하는지 §3 5단계로 확인한다.
+
+이미 게시된 불변 태그(`v1.N.0`)는 다시 주석 달거나 이동하지 않는다. 잘못된 내용은 다음 패치 버전으로 교정한다. 단정이 실패해 push 전에 멈췄다면 게시된 것이 없으므로 로컬 태그만 지우고 다시 만든다. 커스텀 버전 해석기나 롤백 훅을 추가하지 않으며, 관련 없는 사용자 변경을 되돌려 롤백을 흉내내지 않는다.
 
 **체크 이름이 바뀌어 PR이 막힐 때.** 작업 이름을 바꿨다면 ruleset의 `required_status_checks`가 옛 이름을 가리킨다. 실제 이름을 다시 확인해 ruleset을 `PUT`으로 갱신한다.
 

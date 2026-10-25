@@ -240,6 +240,10 @@ mise run check
 
 생성되는 주요 파일은 `.copier-answers.yml`, `mise.toml`, `.pre-commit-config.yaml`, `renovate.json`, caller 워크플로(`ci.yml`, `nightly.yml`, `release.yml`), `.github/rulesets/platform-gates.json`, release-please 설정이다. public Unity는 `release.yml`과 release-please 흐름을 만들지 않는다. devcontainer는 python/typescript/dotnet에만, `.devplatform/config.json`과 Odin 브리지는 Unity에만 들어간다. Unity 결과물은 완전한 Unity 프로젝트가 아니라 Unity 프로젝트 루트에 놓는 플랫폼 계층이므로, 기존 Unity 프로젝트에 렌더링해 `.devplatform/config.json`을 맞춘다. Unity에서 `mise run check`를 CI 필수 검사로도 쓰려면 `ci.yml`을 `run-tests: false`로 호출하는 `platform-check` 작업을 추가한다(`project-delta`가 이렇게 한다). 기존 저장소를 손으로 붙이는 방법과 ruleset 설정은 [ADOPTION.md](ADOPTION.md)에 있다.
 
+**이름 계약.** `--name`이 정하는 것은 GitHub 저장소 이름과 프로젝트 배포 이름이다. 제목, `pyproject.toml`의 `[project].name`, `package.json`의 `name`, release-please의 `package-name`, Sentry 프로젝트 slug가 여기서 나온다. 반면 스타터 샘플 내부 식별자는 바뀌지 않는다. Python 샘플의 import 패키지는 `devflow`(`src/devflow`, `from devflow.pipeline import ...`) 그대로이고, .NET 샘플은 솔루션 `DevFlow.slnx`, 라이브러리 `DevFlow.Core`, 루트 네임스페이스 `DevFlow.Core`, 그리고 pack 결과의 NuGet 패키지 ID `DevFlow.Core`(`dist/DevFlow.Core.0.0.0.nupkg`)를 유지한다. `--name`은 .NET 배포 이름을 바꾸지 않는다. Unity 계층은 기존 Unity 프로젝트에 파일을 얹는 것이라 프로젝트 내부 이름을 바꾸지 않는다. bootstrap은 이름을 Copier에 넘기고 Sentry slug를 만들 뿐, 내부 패키지·프로젝트·네임스페이스 식별자를 다시 쓰지 않는다. 이 템플릿들은 프로젝트별 패키지 이름 변환기가 아니라 시작용 샘플이다.
+
+프로젝트 이름을 내부 식별자까지 따라가게 해야 한다면(공식 생성기로 만든 애플리케이션 코드 등) 스택 비종속 `other` 계층에 프로젝트 고유의 `mise` 태스크(`check`, `test`, `build`)를 붙인다. 플랫폼은 언어 어댑터나 이름 변환 코드를 추가하지 않고, 공유 명령은 계속 `mise run check`다.
+
 ## 7. 비용과 한도
 
 | 항목 | 한도 | 넘으면 |

@@ -91,6 +91,35 @@ mise-managed toolchain pins live in the generated `mise.toml`; a Unity editor
 is supplied by the host and configured in `.devplatform/config.json`. There is
 no `versions.json`.
 
+## Naming contract
+
+`--name` (Copier `project_name`) names the generated GitHub repository and the
+project distribution: the README/devcontainer title, `pyproject.toml`
+`[project].name`, `package.json` `name`, release-please `package-name`, and the
+Sentry project slug. It does **not** rename the identifiers inside the starter
+samples:
+
+- Python projects keep the import package `devflow`: `src/devflow`,
+  `[tool.hatch.build.targets.wheel] packages = ["src/devflow"]`, and
+  `from devflow.pipeline import ...`. Only the distribution name follows
+  `--name`.
+- .NET projects keep the solution `DevFlow.slnx`, the library `DevFlow.Core`,
+  its root namespace `DevFlow.Core`, and the packed NuGet package ID
+  `DevFlow.Core` (`dist/DevFlow.Core.0.0.0.nupkg`). `--name` does not rename a
+  .NET distribution.
+- The Unity template is a platform layer copied into an existing Unity project;
+  it never renames that project.
+
+The bootstrap passes the name to Copier and derives the Sentry slug from it; it
+does not rewrite internal package, project or namespace identifiers. These
+templates are starters, not per-project package renamers.
+
+For application code created by an official generator, or when the internal
+names must follow the project, use the stack-agnostic `other` layer and add
+project-native `mise` tasks (`check`, `test`, `build` as applicable). The
+platform adds no language adapter and no naming code, and the shared command
+stays `mise run check`.
+
 ## Existing repository (manual adoption)
 
 Copier updates apply only to a repository generated from the template and
@@ -347,10 +376,19 @@ returns `v1.1.0`; Copier reports template version `1.1.0`.
 
 Every consumer must use a `v1` or `v1.N.0` whose workflows, template and CLI are
 consistent. Do not move `v1` to a red commit. The release procedure is
-**alias first, version last**: update annotated `v1`, then create the immutable
-`v1.N.0` with a strictly later taggerdate, assert `git describe` selects the
-version tag, and only then publish. Do not move tags after the documentation
-commit.
+**alias first, version last**: create annotated `v1` and the immutable
+`v1.N.0` locally, with a strictly later taggerdate for the version tag (a plain
+one-second gap between the two `git tag -a` calls is enough); assert
+that `git describe` returns `v1.N.0`; only then publish both refs in one atomic
+push, `git push --atomic origin +refs/tags/v1 refs/tags/v1.N.0`. The force
+applies to the moving alias only: the immutable ref is pushed without `+`, so
+the server rejects an overwrite. A failed assertion or a failed atomic push
+publishes nothing, so the local tags can be recreated; a published `v1.N.0`
+never moves. To correct a published release, land a fix on `main`, turn CI
+green, and publish a new patch/version with the same procedure. Do not move
+`v1` back onto older template content: the version `git describe` selects at
+that commit would no longer match the tree the alias points at, which corrupts
+Copier provenance. Do not move tags after the documentation commit.
 
 ## Secrets and services
 
