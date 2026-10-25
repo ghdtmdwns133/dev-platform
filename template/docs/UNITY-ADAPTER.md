@@ -16,10 +16,25 @@ dependency in the repository.
 - `externalGuidBaseline` — package and built-in GUIDs that are not part of
   `Assets/`.
 - `testPlatforms`, `buildTarget`, `odinEntryPoint` — execution defaults.
+- `cloudBuild.target` — Unity Build Automation target id; required when the
+  caller uses `unity-runner: uba` unless it passes `cloud-build-target`.
 
 `devctl unity integrity --write-baseline` regenerates the external GUID
 baseline from `Library/PackageCache`, `Assets/**/*.meta` and
 `Packages/**/*.meta`. It refuses to run when `Library/PackageCache` is absent.
+
+## Before the first verify
+
+The generated config keeps the course-project SampleScene assumptions: scene
+path and GUID, the Main Camera and Global Volume file IDs, the template script
+paths, `StandaloneWindows64` and the `ProjectDelta.Editor.DevPlatform`
+validation entry point. Inspect the target project instead of assuming them:
+read `ProjectSettings/ProjectVersion.txt`, the scene's `.meta` GUID, the scene
+YAML file IDs and the enabled build scene, then replace the values in
+`.devplatform/config.json`. New renders start with `testPlatforms:
+["EditMode"]`; add `PlayMode` only after verifying it on a machine with a GUI
+session. Renaming the C# bridge namespace also requires updating
+`odinEntryPoint`.
 
 ## Odin bridge
 

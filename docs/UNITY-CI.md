@@ -25,12 +25,15 @@ grounds.
 | `self-hosted` | Unity runs on the private repository's self-hosted Windows runner.        |
 | `uba`         | Unity Build Automation builds the commit on Unity-hosted Windows machines.|
 
-The generated caller uses `unity-runner: none` for a public repository and
-`self-hosted` for a private one; the reusable workflow's input default is
-`none`. The public ruleset therefore requires only integrity and security, not
-a `tests` check that never runs. The template renders a platform layer to place
-at a Unity project root; it is not a complete Unity project. Integrity always
-runs on `ubuntu-latest` and never needs an editor. The `changes` job on Ubuntu compares the event's base and head
+The generated caller uses the selected `unity_runner`; the default is `none`
+for every new render. `self-hosted` is private-only and requires a registered
+runner; `uba` requires Unity Build Automation credentials and builds on
+Unity-hosted Windows machines. A public repository must never use
+`self-hosted`. The `none` ruleset therefore requires only integrity and
+security, not a `tests` check that never runs. The template renders a platform
+layer to place at a Unity project root; it is not a complete Unity project.
+Integrity always runs on `ubuntu-latest` and never needs an editor. The
+`changes` job on Ubuntu compares the event's base and head
 commits and reports whether `Assets/`, `Packages/` or `ProjectSettings/`
 changed. Push events use `github.event.before` (all-zero or forced pushes run
 the tests), pull requests use the base SHA, and schedule or manual runs always
@@ -40,18 +43,20 @@ run. When nothing relevant changed, the Unity job stays green and prints
 Builds are excluded from default verification. The `build` input (default
 false) runs `devctl unity build` on the private self-hosted runner, zips
 `artifacts/unity-build` to `artifacts/ProjectDelta-<ref>.zip`, and uploads it as
-the `unity-build` artifact. Callers enable it on tags and nightly runs. Public
-Unity renders omit `release.yml`, so they produce no release assets; UBA
-`build-cloud` is available only when a caller invokes the reusable release
-workflow directly with the three UBA secrets.
+the `unity-build` artifact. Callers enable it on tags and nightly runs. The
+release workflow is rendered only for non-Unity and private self-hosted Unity
+repositories; public Unity and UBA renders omit `release.yml` and produce no
+release assets. UBA `cloud-build` is a separate build path, not a test check or
+a release asset.
 
 Job and check names: the Unity caller names its job `platform-verify`, so the
 checks are `platform-verify / integrity` and, for a private self-hosted runner,
-`platform-verify / tests`; UBA mode adds `platform-verify / cloud-build`.
-`platform-verify / check` does not exist for Unity repositories. A Unity
-repository that also wants the `mise run check` gate adds a `platform-check`
-caller that invokes `ci.yml` with `run-tests: false`; `project-delta` does,
-producing `platform-check / check`.
+`platform-verify / tests`. UBA mode runs `platform-verify / cloud-build` only
+when Unity-relevant files change, so cloud-build is not a required check;
+`none` requires integrity only. `platform-verify / check` does not exist for
+Unity repositories. A Unity repository that also wants the `mise run check`
+gate adds a `platform-check` caller that invokes `ci.yml` with
+`run-tests: false`; `project-delta` does, producing `platform-check / check`.
 
 ## Self-hosted runner
 
@@ -95,13 +100,16 @@ option is not reintroduced without a supported license.
 
 Role split:
 
-- The self-hosted PC runner remains the primary Unity CI for private
-  repositories: EditMode and PlayMode tests on every relevant push and nightly
-  runs. It uses the student's named-user license on the license holder's
-  machine; public repositories use `unity-runner: none`.
-- UBA is the auxiliary path. It produces the release player and can build on
-  demand while the PC is off. Unity operates the build machines, so the
-  student named-user license is not involved and no local editor is needed.
+- The self-hosted PC runner is the primary Unity CI for a private repository
+  that explicitly selects `self-hosted`: EditMode tests (and PlayMode only if
+  configured) on every relevant push and nightly run. It uses the student's
+  named-user license on the license holder's machine. New renders default to
+  `unity-runner: none`; public repositories must never use `self-hosted` and may
+  choose `none` or `uba`.
+- UBA is the auxiliary path. It produces a player build artifact on demand
+  while the PC is off; it is not a GitHub release asset path. Unity operates
+  the build machines, so the student named-user license is not involved and no
+  local editor is needed.
 
 The REST API is `https://build-api.cloud.unity3d.com/api/v1` (Build Automation
 API 2.0.0). Start a build with
@@ -157,13 +165,11 @@ to `artifacts/reports/unity/cloud-build/` by default. Exit codes: 0 success,
 transport/download failure. `UNITY_BUILD_API_BASE` overrides the base URL for
 local tests; `UNITY_BUILD_POLL_SECONDS` overrides the poll interval.
 
-When the release workflow receives `unity_build_api_key`,
-`unity_build_org_id` and `unity_build_project_id`, a `build-cloud` job on
-`ubuntu-latest` supplies the release asset. Without all three secrets it prints
-`::notice::Unity Build Automation not configured; using self-hosted build` and
-runs the self-hosted build command. The generated Unity caller does not ship a
-separate cloud-build workflow; project-delta has its own `cloud-build.yml`
-caller for an on-demand UBA build without the PC.
+When `unity_runner` is `uba`, `unity.yml` runs the `cloud-build` job on
+`ubuntu-latest` for Unity-relevant changes using the three UBA secrets. It is
+not a test check and is never required. The generated caller does not create a
+release workflow for UBA; project-delta has its own `cloud-build.yml` caller
+for an on-demand UBA build without the PC.
 
 ## Local verification
 

@@ -8,10 +8,10 @@ zizmor = "1.31.1"
 actionlint = "1.7.12"
 
 [tasks.lint]
-description = "Lint the CLI, the reusable workflows and the composite actions"
+description = "Lint the CLI, the bootstrap scripts, the reusable workflows and the composite actions"
 run = [
-  "uv run --project cli ruff check cli",
-  "uv run --project cli ruff format --check cli",
+  "uv run --directory cli ruff check --config pyproject.toml . ../scripts",
+  "uv run --directory cli ruff format --check --config pyproject.toml . ../scripts",
   "zizmor --format plain --min-severity low --no-progress .github/workflows actions",
   "actionlint",
 ]

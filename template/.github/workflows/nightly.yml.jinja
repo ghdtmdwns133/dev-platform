@@ -23,9 +23,17 @@ jobs:
       actions: read
     uses: {{ owner }}/dev-platform/.github/workflows/unity.yml@{{ platform_ref }}
     with:
-      unity-runner: {{ 'none' if visibility == 'public' else 'self-hosted' }}
-      build: {{ 'false' if visibility == 'public' else 'true' }}
+      unity-runner: {{ unity_runner }}
+{% if unity_runner == 'self-hosted' %}
+      build: true
+{% endif %}
       platform-ref: {{ platform_ref }}
+{% if unity_runner == 'uba' %}
+    secrets:
+      unity_build_api_key: {% raw %}${{ secrets.UNITY_BUILD_API_KEY }}{% endraw %}
+      unity_build_org_id: {% raw %}${{ secrets.UNITY_BUILD_ORG_ID }}{% endraw %}
+      unity_build_project_id: {% raw %}${{ secrets.UNITY_BUILD_PROJECT_ID }}{% endraw %}
+{% endif %}
 {% else %}
     uses: {{ owner }}/dev-platform/.github/workflows/nightly.yml@{{ platform_ref }}
     with:

@@ -151,10 +151,13 @@ passes. A measured value below `coverage.minimum` fails `unity-coverage`.
 ## CI contract
 
 Non-Unity callers use `ci.yml`; the caller job is named `platform-verify`, so
-the checks are `platform-verify / check` and, except for `other`,
-`platform-verify / test`. `ci.yml` runs `mise run check` and, when `run-tests`
-is true, `mise run test`, then uploads `coverage/`. Codecov runs only when `enable-codecov` is true and
-the `codecov_token` secret is present; an enabled job without a token prints a
+the checks are `platform-verify / check` and, when `run-tests` is true,
+`platform-verify / test`. The rendered `run_tests` default is true for
+python/typescript/dotnet and false for `other`; `other` needs a real native
+test task before opting in. `ci.yml` runs `mise run check` and, when `run-tests`
+is true, `mise run test`, then uploads `coverage/`. Codecov is off by default;
+it runs only when `enable-codecov` is true and the `codecov_token` secret is
+present. An enabled job without a token prints a
 `::warning::`, and a disabled job prints a `::notice::`. `security.yml` runs
 independently and produces `platform-security / scan`.
 
@@ -162,9 +165,11 @@ Unity gates run through `unity.yml`. Its `integrity` job runs
 `devctl verify --profile unity-assets` on `ubuntu-latest` and uploads
 `reports-unity-assets`; the `tests` job runs only for a private repository on
 the self-hosted Windows runner with `devctl verify --profile unity` and uploads
-coverage to Codecov when the token is present. Public repositories use
-`unity-runner: none` and require integrity only. UBA and build jobs publish
-their own artifacts; GameCI is not an active runner option.
+coverage to Codecov when the token is present. New repositories default to
+`unity-runner: none` and require integrity only; public repositories cannot use
+`self-hosted` (choose `none` or `uba`). UBA cloud-build runs only for
+Unity-relevant changes and is not a required check. Build jobs publish their
+own artifacts; GameCI is not an active runner option.
 A Unity repository can also add a `platform-check` caller that invokes `ci.yml`
 with `run-tests: false`; `project-delta` does, producing
 `platform-check / check`. The Unity caller itself never produces

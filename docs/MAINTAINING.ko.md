@@ -166,9 +166,11 @@ uv run --script scripts/bootstrap_repo.py \
   --template python --name my-service --dest C:/dev/my-service
 ```
 
-`--dry-run`으로 계획을 먼저 보고, `--owner`, `--visibility`, `--platform-ref`, `--min-coverage`, `--template-source`(기본 `https://github.com/<owner>/dev-platform`), `--template-ref`(기본 최신 PEP 440 태그), `--local`(개발/self-test용), `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. bootstrap은 git 초기화·첫 커밋, `mise trust`/`mise install`, `mise run prepare`(정의된 경우), pre-commit 훅 설치, `gh repo create`(없을 때만), retention 14일, workflow 권한, auto-merge, branch 삭제, 취약점 알림, 라벨, `platform-gates` ruleset, 가능한 경우 Codecov/Sentry 시크릿을 처리한다. 같은 명령을 다시 실행하면 설정을 재조정하고 훅도 다시 설치한다.
+`--dry-run`으로 계획을 먼저 보고, `--owner`, `--visibility`, `--platform-ref`, `--min-coverage`(0–100), `--template-source`(기본 `https://github.com/<owner>/dev-platform`), `--template-ref`(기본 최신 PEP 440 태그), `--local`(개발/self-test용), `--create-repo`/`--no-create-repo`를 필요할 때 넘긴다. `--render-only`는 렌더링 후 멈추고 git·도구·훅·GitHub 호출을 하지 않지만 템플릿 fetch는 하므로 오프라인이 아니다. `--adopt`는 `--render-only`와 `other|unity`에서만, `--force` 없이 쓰며 기존 파일을 모두 보존한다. `--run-tests`는 `other`에서 실제 테스트 태스크가 있을 때만, `--unity-runner none|self-hosted|uba`는 Unity에서만 유효하고 기본은 `none`이다. `--enable-codecov`는 기본 false이고, Sentry는 명시적으로 요청할 때만 처리한다. bootstrap은 git 초기화·첫 커밋, `mise trust`/`mise install`, `mise run prepare`(정의된 경우), pre-commit 훅 설치, `gh repo create`(없을 때만), retention 14일, workflow 권한, auto-merge, branch 삭제, 취약점 알림, 라벨, `platform-gates` ruleset을 처리한다. 같은 저장소에 `--root`로 다시 실행하면 설정을 재조정하고 훅도 다시 설치한다. 비어 있지 않은 대상에 `--template` 렌더를 다시 실행하면 거부되므로 템플릿 관리 저장소는 `copier update`를 쓴다.
 
-**기존 저장소.** `.copier-answers.yml`을 새로 만들지 않는다. 다음을 직접 넣는다.
+**기존 저장소.** 네이티브 앱이나 기존 에디터 Unity 프로젝트에는 먼저 overlay를 쓴다. `other`(또는 `unity`)로 `--adopt --render-only`를 실행하면 `.copier-answers.yml`이 실제 provenance로 생성되고 기존 파일은 모두 보존된다. 건너뛴 `mise.toml`·`.pre-commit-config.yaml`·`.github/workflows/ci.yml` 충돌을 읽고 빠진 도구·훅·태스크를 직접 병합해야 하며, 복사 성공을 CI·테스트 통합으로 간주하지 않는다. 기존 CI가 `ci.yml`을 소유하면 그대로 두고 플랫폼 caller를 다른 파일명에 두되 `platform-verify`/`platform-security` 작업 ID를 맞추거나 네이티브 검사에 ruleset을 맞춘다. `.copier-answers.yml`이 이미 있으면 `--adopt`가 아니라 `copier update`를 쓴다.
+
+provenance를 원치 않는 수동 이관이라면 `.copier-answers.yml`을 새로 만들지 않고 다음을 직접 넣는다.
 
 1. 해당 스택의 `mise.toml`과 `.pre-commit-config.yaml`.
 2. Unity라면 `.devplatform/config.json`.
@@ -184,7 +186,7 @@ uv run --script scripts/bootstrap_repo.py \
   --name project-delta --visibility private --dry-run
 ```
 
-`--root` 모드는 `gh repo create`를 건너뛰고, `mise trust`/`mise install`, `mise run prepare`(정의된 경우), pre-commit 훅 설치를 수행하며, `<root>/.github/rulesets/platform-gates.json`이 있으면 ruleset을 갱신하고 없으면 notice만 남긴다. 기존 원격 저장소가 있으면 로컬 `origin`이 정확히 `<owner>/<name>`을 가리켜야 하며, 다르면 exit 1로 중단한다. `.copier-answers.yml`은 쓰지 않는다.
+`--root` 모드는 `gh repo create`를 건너뛰고, `mise trust`/`mise install`, `mise run prepare`(정의된 경우), pre-commit 훅 설치를 수행하며, `<root>/.github/rulesets/platform-gates.json`이 있으면 ruleset을 갱신하고 없으면 notice만 남긴다. 실제 체크아웃이어야 하고 커밋되지 않은 변경이나 추적되지 않은 파일이 없어야 한다. 기존 원격 저장소가 있으면 로컬 `origin`이 정확히 `<owner>/<name>`을 가리켜야 하며, 다르면 exit 1로 중단한다. `.copier-answers.yml`은 쓰지 않는다. `--no-create-repo`는 로컬 전용이 아니며 기존 원격을 계속 조회·재조정한다. 원격이 없으면 로컬 git·도구·훅 설정 후 생성·설정·ruleset만 건너뛴다.
 
 **필수 검사.** 첫 초록 실행 뒤 실제 이름을 확인한다.
 
@@ -193,10 +195,13 @@ gh api repos/ghdtmdwns133/<repo>/commits/main/check-runs --jq '[.check_runs[].na
 ```
 
 - `python`, `typescript`, `dotnet`: `platform-verify / check`, `platform-verify / test`, `platform-security / scan`
-- `other`: `platform-verify / check`, `platform-security / scan` (테스트 태스크 없음)
-- public Unity(`unity-runner: none`): `platform-verify / integrity`, `platform-security / scan`
-- private Unity(`unity-runner: self-hosted`): `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan`; UBA 모드면 `platform-verify / cloud-build` 추가
+- `other` 기본(`run_tests: false`): `platform-verify / check`, `platform-security / scan`; 실제 테스트 태스크가 있어 `run_tests: true`면 `platform-verify / test` 추가
+- Unity `unity-runner: none`(신규 기본): `platform-verify / integrity`, `platform-security / scan`
+- private Unity `unity-runner: self-hosted`: `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan`
+- Unity `unity-runner: uba`: `platform-verify / integrity`, `platform-security / scan`; `cloud-build`는 Unity 관련 파일이 바뀔 때만 돌므로 필수 검사로 넣지 않는다.
 - `project-delta`: 위 private Unity 검사에 `platform-check / check`를 더한다(`ci.yml`을 `run-tests: false`로 호출).
+
+새 Unity 렌더는 EditMode 전용이고 기본 러너가 `none`이다. 러너가 없는데 테스트 작업을 요구하거나 큐에 넣지 않는다. public 저장소에는 self-hosted를 등록하지 않는다.
 
 Unity 저장소에는 `platform-verify / check`를 넣지 않는다. 그 작업은 존재하지 않는다. `mise run check`를 CI에서도 쓰려면 `platform-check` caller를 따로 두고 `platform-check / check`를 넣는다. `notify`와 평소 건너뛰는 build 작업도 넣지 않는다. ruleset JSON과 `gh api` 명령은 [ADOPTION.md](ADOPTION.md)에 있다. 같은 이름의 ruleset이 있으면 `PUT`으로 갱신한다.
 
@@ -257,7 +262,7 @@ gh workflow run release.yml -R ghdtmdwns133/project-delta --ref main \
 ## 9. 알려진 제약
 
 - **Unity 학생 라이선스.** 보유 라이선스는 named-user Student라 시리얼도 `.ulf`도 없다. GameCI v4가 지원하는 활성화 방식이 아니고, Unity Editor Software Terms §2.8은 서드파티가 클라우드/원격 서버에서 에디터를 실행하는 것을 금지한다. 그래서 `unity.yml`에는 `gameci` 옵션과 GameCI 작업·라이선스 시크릿이 없으며, GitHub 호스팅 러너에서 Unity를 돌리는 경로는 제공하지 않는다.
-- **public Unity 릴리스 없음.** public Unity 렌더는 `.github/workflows/release.yml`을 생성하지 않으므로 release-please와 릴리스 자산이 없다. integrity와 nightly integrity만 돌린다. private Unity만 self-hosted/UBA 릴리스 경로를 쓴다.
+- **public Unity/UBA 릴리스 없음.** public Unity와 UBA 렌더는 `.github/workflows/release.yml`을 생성하지 않으므로 release-please와 릴리스 자산이 없다. 기본 `none`은 integrity만, UBA를 선택하면 관련 변경에서 cloud-build가 돌 수 있지만 테스트가 아니고 필수 검사도 아니다. private self-hosted Unity만 릴리스 경로를 쓴다.
 - **gitleaks 전체 히스토리.** `actions/security-scan`은 전체 히스토리를 스캔한다. 과거 커밋의 비밀도 계속 잡히며, 비밀을 교체해도 히스토리에 남아 있으면 빨간색이 유지된다. 브랜치 삭제는 그 커밋이 기본 브랜치 히스토리에 없을 때만 효과가 있다.
 - **`GITHUB_TOKEN` PR.** `GITHUB_TOKEN`으로 만든 PR은 `pull_request` 워크플로를 트리거하지 않는다. release-please의 Release PR이 그렇기 때문에 `release.yml`이 CI를 대신 dispatch하고, `action_required` 실행을 승인한 뒤 병합을 기다린다.
 - **docs-only push.** caller가 `paths-ignore: [docs/**, "**/*.md"]`를 두므로 문서만 바꾸면 CI가 생기지 않을 수 있다. 필수 검사가 있는 저장소에서는 소유자 bypass로 병합하거나 코드 변경을 섞는다.

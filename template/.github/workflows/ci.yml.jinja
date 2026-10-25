@@ -28,14 +28,23 @@ jobs:
 {% if stack == 'unity' %}
     uses: {{ owner }}/dev-platform/.github/workflows/unity.yml@{{ platform_ref }}
     with:
-      unity-runner: {{ 'none' if visibility == 'public' else 'self-hosted' }}
+      unity-runner: {{ unity_runner }}
       platform-ref: {{ platform_ref }}
+{% if enable_codecov or unity_runner == 'uba' %}
     secrets:
+{% if enable_codecov %}
       codecov_token: {% raw %}${{ secrets.CODECOV_TOKEN }}{% endraw %}
+{% endif %}
+{% if unity_runner == 'uba' %}
+      unity_build_api_key: {% raw %}${{ secrets.UNITY_BUILD_API_KEY }}{% endraw %}
+      unity_build_org_id: {% raw %}${{ secrets.UNITY_BUILD_ORG_ID }}{% endraw %}
+      unity_build_project_id: {% raw %}${{ secrets.UNITY_BUILD_PROJECT_ID }}{% endraw %}
+{% endif %}
+{% endif %}
 {% else %}
     uses: {{ owner }}/dev-platform/.github/workflows/ci.yml@{{ platform_ref }}
     with:
-      run-tests: {{ 'false' if stack == 'other' else 'true' }}
+      run-tests: {{ 'false' if stack == 'other' and not run_tests else 'true' }}
       enable-codecov: {{ 'true' if enable_codecov and stack != 'other' else 'false' }}
       working-directory: "."
     secrets:

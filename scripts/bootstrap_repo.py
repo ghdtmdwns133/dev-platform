@@ -8,6 +8,8 @@
 This is the single entry point for repository provisioning. It renders the
 template with Copier and then applies the GitHub settings that a personal
 account cannot share across repositories (secrets, labels and rulesets).
+``--render-only`` stops after rendering, and ``--adopt`` overlays the platform
+files onto an existing project without replacing any of its files.
 
 The script is idempotent. ``--dry-run`` prints every planned command and makes
 no network calls, no Copier invocation and no filesystem changes.
@@ -33,6 +35,8 @@ PRE_COMMIT_VERSION = "4.7.0"
 DOPPLER_PROJECT = "dev-platform-shared"
 DOPPLER_CONFIG = "prd"
 STACKS = ("python", "typescript", "dotnet", "unity", "other")
+ADOPT_STACKS = ("other", "unity")
+UNITY_RUNNERS = ("none", "self-hosted", "uba")
 LABELS = (
     ("automerge", "0E8A16", "Auto-merge when required checks pass"),
     ("ci-alert", "B60205", "Automated CI failure reports"),
@@ -51,6 +55,16 @@ def notice(message: str) -> None:
 
 def slugify(value: str) -> str:
     return value.strip().lower().replace(" ", "-")
+
+
+def coverage_percentage(value: str) -> int:
+    try:
+        percentage = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer from 0 to 100") from exc
+    if not 0 <= percentage <= 100:
+        raise argparse.ArgumentTypeError("must be between 0 and 100")
+    return percentage
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -81,7 +95,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--name", required=True, help="repository name")
     parser.add_argument("--owner", default="ghdtmdwns133", help="GitHub account")
     parser.add_argument("--visibility", choices=("private", "public"), default="private")
-    parser.add_argument("--min-coverage", type=int, default=80)
+    parser.add_argument(
+        "--min-coverage",
+        type=coverage_percentage,
+        default=80,
+        metavar="PERCENT",
+        help="minimum line coverage, 0-100 (default: 80)",
+    )
     parser.add_argument("--platform-ref", default="v1")
     parser.add_argument(
         "--create-repo",
@@ -92,14 +112,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--enable-codecov",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="set CODECOV_TOKEN when a value is available",
+        default=False,
+        help="set CODECOV_TOKEN when a value is available (opt-in; default: disabled)",
     )
     parser.add_argument(
         "--enable-sentry",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="create the Sentry project and set its secrets (typescript only)",
+    )
+    parser.add_argument(
+        "--run-tests",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="render a test job for --template other when a native test task exists",
+    )
+    parser.add_argument(
+        "--unity-runner",
+        choices=UNITY_RUNNERS,
+        default=None,
+        help="Unity caller runner for --template unity (default: template value none)",
+    )
+    parser.add_argument(
+        "--render-only",
+        action="store_true",
+        help="render --template and stop before git, hooks, or GitHub changes",
+    )
+    parser.add_argument(
+        "--adopt",
+        action="store_true",
+        help="overlay the template on an existing other/unity project without replacing files",
     )
     parser.add_argument("--force", action="store_true", help="pass --force to Copier")
     parser.add_argument("--dry-run", action="store_true", help="print the plan; make no changes")
@@ -108,6 +150,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--template requires --dest")
     if args.template and args.enable_sentry and args.template != "typescript":
         parser.error("--enable-sentry is only supported for the typescript stack")
+    if args.render_only and not args.template:
+        parser.error("--render-only requires --template")
+    if args.adopt:
+        if not args.render_only:
+            parser.error("--adopt requires --render-only")
+        if args.template not in ADOPT_STACKS:
+            parser.error("--adopt supports only --template other or unity")
+        if args.force:
+            parser.error("--adopt cannot be combined with --force")
+    if args.run_tests is not None and args.template != "other":
+        parser.error("--run-tests is only supported for --template other")
+    if args.unity_runner is not None:
+        if args.template != "unity":
+            parser.error("--unity-runner is only supported for --template unity")
+        if args.visibility == "public" and args.unity_runner == "self-hosted":
+            parser.error("--unity-runner self-hosted requires a private repository")
     return args
 
 
@@ -243,8 +301,34 @@ def rewrite_answers_source(destination: Path, source: str) -> None:
     answers.write_text("".join(lines), encoding="utf-8")
 
 
-def render(args: argparse.Namespace, plan: Plan) -> Path:
+def prepare_render_destination(args: argparse.Namespace) -> Path:
     destination = Path(args.dest or "").expanduser().resolve()
+    if args.adopt:
+        if not destination.is_dir():
+            raise SystemExit(f"error: --adopt target is not an existing directory: {destination}")
+        answers = destination / ".copier-answers.yml"
+        if answers.exists() or answers.is_symlink():
+            raise SystemExit(
+                f"error: {destination} already records Copier provenance in {answers.name};"
+                " refusing to copy over it.\n"
+                "Use 'copier update' for a template-managed repository, or reconcile"
+                " settings with bootstrap --root."
+            )
+        return destination
+    if destination.exists():
+        if not destination.is_dir():
+            raise SystemExit(f"error: render destination is not a directory: {destination}")
+        if any(destination.iterdir()):
+            raise SystemExit(
+                f"error: render destination is not empty: {destination}\n"
+                "Rendering never overwrites existing files, even with --force."
+                " Use --render-only --adopt --template other|unity to preserve an"
+                " existing project, or 'copier update' for a template-managed repository."
+            )
+    return destination
+
+
+def copier_data(args: argparse.Namespace) -> dict[str, str]:
     data = {
         "project_name": args.name,
         "stack": args.template,
@@ -257,9 +341,21 @@ def render(args: argparse.Namespace, plan: Plan) -> Path:
     }
     if args.template == "typescript":
         data["enable_sentry"] = "true" if args.enable_sentry else "false"
+    if args.template == "other" and args.run_tests is not None:
+        data["run_tests"] = "true" if args.run_tests else "false"
+    if args.template == "unity" and args.unity_runner is not None:
+        data["unity_runner"] = args.unity_runner
+    return data
+
+
+def render(args: argparse.Namespace, plan: Plan) -> Path:
+    destination = prepare_render_destination(args)
+    data = copier_data(args)
     source = template_source(args)
     argv = ["uvx", f"copier@{COPIER_VERSION}", "copy", "--defaults"]
-    if args.force:
+    if args.adopt:
+        argv.extend(["--skip", "*"])
+    elif args.force:
         argv.append("--force")
     if args.template_ref:
         argv.extend(["--vcs-ref", args.template_ref])
@@ -277,6 +373,55 @@ def render(args: argparse.Namespace, plan: Plan) -> Path:
             log(f"answers source normalized: {answer_source}")
         log(f"rendered {args.template} template: {destination}")
     return destination
+
+
+def git_run(root: Path, *argv: str) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", *argv],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise SystemExit("error: git is not installed") from exc
+
+
+def require_git_checkout(root: Path) -> None:
+    if not root.is_dir():
+        raise SystemExit(f"error: repository root does not exist: {root}")
+    top = git_run(root, "rev-parse", "--show-toplevel")
+    if top.returncode != 0:
+        raise SystemExit(
+            f"error: {root} is not a Git checkout.\n"
+            "Full --root reconciliation only configures an existing repository;"
+            " it never initializes or commits an arbitrary directory."
+        )
+    if Path(top.stdout.strip()).resolve() != root:
+        raise SystemExit(
+            f"error: {root} is not the top level of its Git checkout."
+            " Run bootstrap from the repository root."
+        )
+    head = git_run(root, "rev-parse", "--verify", "HEAD")
+    if head.returncode != 0:
+        raise SystemExit(
+            f"error: {root} has no commits. Commit the reviewed work before bootstrapping."
+        )
+
+
+def require_clean_worktree(root: Path) -> None:
+    status = git_run(root, "status", "--porcelain")
+    if status.returncode != 0:
+        raise SystemExit(f"error: git status failed in {root}")
+    if not status.stdout.strip():
+        return
+    preview = "\n".join(status.stdout.strip().splitlines()[:10])
+    raise SystemExit(
+        f"error: {root} has uncommitted or untracked changes:\n{preview}\n"
+        "Commit or stash the reviewed work before bootstrapping;"
+        " the script never commits or pushes unrelated changes."
+    )
 
 
 def ensure_git_repository(root: Path, plan: Plan) -> None:
@@ -320,15 +465,15 @@ def install_pre_commit(root: Path, plan: Plan) -> None:
         log("pre-commit hook installed")
 
 
-def repository_exists(plan: Plan, repo: str) -> bool:
-    if plan.dry_run:
-        print(f"+ gh repo view {repo} --json name  # skip creation when this succeeds")
-        return False
-    result = subprocess.run(
-        ["gh", "repo", "view", repo, "--json", "name"],
-        capture_output=True,
-        text=True,
-    )
+def repository_exists(repo: str) -> bool:
+    try:
+        result = subprocess.run(
+            ["gh", "repo", "view", repo, "--json", "name"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise SystemExit("error: gh is not installed") from exc
     return result.returncode == 0
 
 
@@ -358,42 +503,41 @@ def github_remote_slug(url: str) -> str | None:
 
 
 def origin_url(root: Path) -> str | None:
-    result = subprocess.run(
-        ["git", "remote", "get-url", "origin"],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    result = git_run(root, "remote", "get-url", "origin")
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
 
 
-def ensure_remote_repository(
+def preflight_repository(
     args: argparse.Namespace, root: Path, repo: str, plan: Plan
-) -> bool:
+) -> bool | None:
+    """Check remote identity before installs or settings.
+
+    Returns True when settings can be applied, False when a missing remote and
+    ``--no-create-repo`` stop the run, and None when the remote must be created.
+    """
     if plan.dry_run:
         print(f"+ gh repo view {repo} --json name  # when it exists, require origin == {repo}")
-        if not args.create_repo:
-            print(f"# assume {repo} exists because --no-create-repo was passed")
-            return True
-        plan.run(
-            [
-                "gh",
-                "repo",
-                "create",
-                repo,
-                f"--{args.visibility}",
-                "--source",
-                str(root),
-                "--push",
-            ]
-        )
+        if args.create_repo:
+            print(
+                f"+ gh repo create {repo} --{args.visibility} --source {root} --push"
+                "  # only when absent"
+            )
+        else:
+            print(f"# when {repo} is absent, stop: repository creation disabled")
         return True
-    if repository_exists(plan, repo):
-        url = origin_url(root)
-        slug = github_remote_slug(url) if url else None
+    url = origin_url(root)
+    slug = github_remote_slug(url) if url else None
+    if url is not None and slug != repo.lower():
+        raise SystemExit(
+            f"error: {root} has origin {redact_remote(url)!r},"
+            f" which does not resolve to {repo}.\n"
+            "Refusing to apply settings or push this checkout to an unrelated remote.\n"
+            f"Clone {repo} or correct 'origin', then re-run."
+        )
+    exists = repository_exists(repo)
+    if exists:
         if url is None:
             raise SystemExit(
                 f"error: {repo} already exists, but {root} has no git 'origin' remote.\n"
@@ -402,18 +546,16 @@ def ensure_remote_repository(
                 f"  git clone https://github.com/{repo}.git {root}\n"
                 f"  # or: git -C {root} remote add origin https://github.com/{repo}.git"
             )
-        if slug != repo.lower():
-            raise SystemExit(
-                f"error: {root} has origin {redact_remote(url)!r},"
-                f" which does not resolve to {repo}.\n"
-                "Refusing to apply repository settings to an unrelated remote.\n"
-                f"Clone {repo} or correct 'origin', then re-run."
-            )
         log(f"repository exists and origin matches: {repo}")
         return True
     if not args.create_repo:
         notice(f"{repo} does not exist; repository creation disabled")
         return False
+    log(f"repository not found; it will be created: {repo}")
+    return None
+
+
+def create_remote_repository(args: argparse.Namespace, root: Path, repo: str, plan: Plan) -> None:
     plan.run(
         [
             "gh",
@@ -426,7 +568,6 @@ def ensure_remote_repository(
             "--push",
         ]
     )
-    return True
 
 
 def apply_settings(repo: str, plan: Plan) -> None:
@@ -519,10 +660,7 @@ def apply_ruleset(root: Path, repo: str, plan: Plan) -> None:
 
 def set_codecov_secret(repo: str, plan: Plan) -> None:
     if plan.dry_run:
-        print(
-            f"+ gh secret set CODECOV_TOKEN --repo {repo}"
-            "  # value from env or Doppler, redacted"
-        )
+        print(f"+ gh secret set CODECOV_TOKEN --repo {repo}  # value from env or Doppler, redacted")
         return
     value = plan.value("CODECOV_TOKEN")
     if not value:
@@ -608,18 +746,25 @@ def main(argv: list[str] | None = None) -> int:
     plan = Plan(args.dry_run)
     if args.dry_run:
         print("bootstrap dry run: no network calls, no Copier run, no file changes")
-    if args.template:
-        root = render(args, plan)
-    else:
-        root = Path(args.root).expanduser().resolve()
+    root = render(args, plan) if args.template else Path(args.root).expanduser().resolve()
+    if args.render_only:
+        log(f"{'render plan complete' if plan.dry_run else 'render complete'}: {root}")
+        return 0
     if not plan.dry_run and not root.is_dir():
         raise SystemExit(f"error: repository root does not exist: {root}")
-    ensure_git_repository(root, plan)
-    install_pre_commit(root, plan)
     repo = f"{args.owner}/{args.name}"
-    exists = ensure_remote_repository(args, root, repo, plan)
-    if not exists:
+    if args.template:
+        state = preflight_repository(args, root, repo, plan)
+        ensure_git_repository(root, plan)
+    else:
+        require_git_checkout(root)
+        require_clean_worktree(root)
+        state = preflight_repository(args, root, repo, plan)
+    install_pre_commit(root, plan)
+    if state is False:
         return 0
+    if state is None:
+        create_remote_repository(args, root, repo, plan)
     apply_settings(repo, plan)
     apply_labels(repo, plan)
     apply_ruleset(root, repo, plan)

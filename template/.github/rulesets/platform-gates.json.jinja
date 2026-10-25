@@ -26,12 +26,12 @@
         "required_status_checks": [
 {% if stack == 'unity' %}
           { "context": "platform-verify / integrity" },
-{% if visibility == 'private' %}
+{% if unity_runner == 'self-hosted' and visibility == 'private' %}
           { "context": "platform-verify / tests" },
 {% endif %}
 {% else %}
           { "context": "platform-verify / check" },
-{% if stack != 'other' %}
+{% if stack != 'other' or run_tests %}
           { "context": "platform-verify / test" },
 {% endif %}
 {% endif %}

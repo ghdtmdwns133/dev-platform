@@ -37,13 +37,21 @@ same commands and the same configuration.
   listed in `unity.testPlatforms`), build, Odin bridge, NUnit-to-JUnit
   conversion, coverage upload and Unity Build Automation. Non-Unity stacks are
   verified by their mise tasks, not by `devctl`.
-- **releases** — for non-Unity and private Unity repositories, release-please
-  opens the Release PR; merging it creates the tag, and the same workflow
-  builds and attaches the assets. Public Unity renders omit the release
-  workflow and produce no release assets (integrity and nightly integrity
-  only).
+- **releases** — for non-Unity and private Unity repositories using the
+  self-hosted runner, release-please opens the Release PR; merging it creates
+  the tag, and the same workflow builds and attaches the assets. Public Unity
+  and UBA renders omit the release workflow and produce no release assets; with
+  the default `none` runner Unity runs integrity only, while UBA may run
+  cloud-build for relevant changes.
 
 ## Quick start
+
+For AI-assisted provisioning, open this dev-platform checkout itself as the AI
+workspace so the root [AGENTS.md](AGENTS.md) is loaded, then describe the app in
+natural language — for example, “`C:/dev/my-app`에 Vite + React 앱을 만들어 줘.
+비공개 저장소로.” Flags are not required. That guidance is repository-scoped;
+it is not global configuration and is not discovered from an unrelated
+workspace.
 
 Prerequisites: `uv` (which provides `uvx`), `git`, `mise`, and an authenticated
 `gh`. From a dev-platform checkout:
@@ -62,11 +70,28 @@ settings, runs `mise trust`/`mise install`, `mise run prepare` when the stack
 defines it, and installs the pre-commit hook.
 It writes `.copier-answers.yml` (Copier, not the script). Pass `--owner`,
 `--visibility`, `--platform-ref`, `--min-coverage`,
-`--enable-codecov`/`--no-enable-codecov`,
 `--enable-sentry`/`--no-enable-sentry`, or `--no-create-repo` as needed.
-`--dry-run` prints every planned command without network access, rendering or
-writes. The bootstrap is idempotent; re-running it reconciles settings, labels
-and the ruleset without creating a second repository.
+Codecov is off by default in both the bootstrap and the template; enabling it
+is optional and deferred in [TODO.md](TODO.md).
+
+`--render-only` requires `--template` and stops after Copier: no git, tools,
+hooks, GitHub API or secrets. `--adopt` (with `--render-only`, `--template
+other|unity`, and never `--force`) adds the platform layer to an existing
+native application or Unity project while preserving every existing file;
+inspect the skipped files before assuming CI is wired. `--run-tests` is valid
+only for `other` and only when its `mise run test` task really exists.
+`--unity-runner none|self-hosted|uba` is valid only for Unity and defaults to
+`none`; a public repository cannot use `self-hosted`. `--dry-run` prints every
+planned command without network access, rendering or writes. The settings-only
+`--root` path is idempotent: re-running it reconciles settings, labels and the
+ruleset without creating a second repository. A non-empty template destination
+is refused; update a Copier-managed repository with `copier update`. A full
+`--root` reconciliation requires a clean git checkout whose `origin` matches the
+requested repository. `--no-create-repo` still queries and reconciles an
+existing remote; if the remote is absent it still performs the local
+Git/tool/hook setup, then stops before repository creation, settings, ruleset
+and secrets. It is not a local-only mode. Use `--render-only` for a local
+render.
 
 A fresh clone later cannot inherit git hooks, so install them once there:
 
@@ -76,9 +101,14 @@ mise run prepare
 mise exec -- pre-commit install
 ```
 
-To render only, without any GitHub work, use Copier directly:
+To render only, without any GitHub work, use `--render-only` (or Copier
+directly). Both still fetch the template, so they are not offline; only
+`--dry-run` performs no network access or writes:
 
 ```bash
+uv run --script scripts/bootstrap_repo.py --template python --name my-service \
+  --dest C:/dev/my-service --render-only
+# or
 uvx copier copy https://github.com/ghdtmdwns133/dev-platform my-service
 ```
 
@@ -87,8 +117,13 @@ The default Copier source is `https://github.com/ghdtmdwns133/dev-platform` at t
 `--local` renders from the current checkout instead and is intended for
 development/self-test, not normal project creation.
 
-The Unity template is a platform layer, not a complete Unity project: render it
-into a Unity project root and adjust `.devplatform/config.json`.
+The Unity template is a platform layer, not a complete Unity project. For an
+existing editor-created project, use `--template unity --adopt --render-only`
+and align `.devplatform/config.json` with that project's actual
+`ProjectSettings/ProjectVersion.txt`, scene and `.meta` GUIDs, scene fileIds,
+and enabled build scene. New Unity renders are EditMode-only and default to
+`unity-runner: none`; enable a runner or PlayMode only when it is actually
+configured. UBA also needs `unity.cloudBuild.target` filled in.
 
 The template does not install Renovate, authorize Codecov/CodeScene/Sentry, or
 log in to Doppler. Those remain external account actions; see
@@ -112,22 +147,24 @@ does not contain a complete Unity project.
 ## CI behaviour
 
 - Non-Unity callers name the `ci.yml` job `platform-verify`, producing
-  `platform-verify / check` and `platform-verify / test`. `other` runs the
-  check job only, so it has `platform-verify / check` and
-  `platform-security / scan`. `security.yml` produces
-  `platform-security / scan`.
-- Unity callers use `unity.yml` (as `platform-verify`), producing
-  `platform-verify / integrity`; a private repository with the self-hosted
-  runner also produces `platform-verify / tests`, while a public repository
-  uses `unity-runner: none` and requires only integrity. A repository that also
-  wants the `mise run check` gate adds a `platform-check` caller that invokes
-  `ci.yml` with `run-tests: false`; `project-delta` does, producing
+  `platform-verify / check` and, when `run-tests` is true,
+  `platform-verify / test`. `other` defaults to `run-tests: false`, so it has
+  `platform-verify / check` and `platform-security / scan`. `security.yml`
+  produces `platform-security / scan`.
+- Unity callers use `unity.yml` (as `platform-verify`). The default
+  `unity-runner: none` produces only `platform-verify / integrity`; a private
+  repository with an explicit `self-hosted` runner also produces
+  `platform-verify / tests`; `uba` runs `cloud-build` only when Unity-relevant
+  files change and requires integrity only (never require cloud-build, which is
+  skipped on unrelated PRs). New Unity renders are EditMode-only. A repository
+  that also wants the `mise run check` gate adds a `platform-check` caller that
+  invokes `ci.yml` with `run-tests: false`; `project-delta` does, producing
   `platform-check / check`. Unity repositories never produce
   `platform-verify / check`; do not require that absent check.
 - The check job runs `mise run check`; the test job runs `mise run test` and
-  uploads `coverage/` as an artifact. Codecov uploads only when the job is
-  enabled and a token is present; an enabled job with no token prints a
-  `::warning::`, and a disabled job prints a `::notice::`.
+  uploads `coverage/` as an artifact. Codecov is off by default; it uploads
+  only when the job is enabled and a token is present. An enabled job with no
+  token prints a `::warning::`, and a disabled job prints a `::notice::`.
 - Security scanning covers trivy, gitleaks, zizmor and actionlint and publishes
   SARIF plus a CycloneDX SBOM.
 - Failures open or update an issue labeled `ci-alert` with the workflow, job,
@@ -136,12 +173,15 @@ does not contain a complete Unity project.
 - Renovate opens dependency and action-update PRs once the installed app
   processes the repository; auto-merge uses GitHub's native auto-merge and the
   required checks from the ruleset. Release PRs are handled by `release.yml`.
-- Unity runs on the private repository's self-hosted Windows runner, or through
-  Unity Build Automation. GameCI is not an active option because the Student
-  named-user license is not a supported GameCI activation method.
+- Unity runs on a private repository's configured self-hosted Windows runner,
+  or through Unity Build Automation; new renders default to `unity-runner:
+  none` and integrity only. Public repositories never use self-hosted. GameCI
+  is not an active option because the Student named-user license is not a
+  supported GameCI activation method.
 
 ## Documentation
 
+- [AGENTS.md](AGENTS.md) — repository guidelines and the bounded AI project-intent workflow.
 - [docs/MANUAL.ko.md](docs/MANUAL.ko.md) — 매일 쓰는 절차: commit, push, Unity 러너, 릴리스, 장애 대응.
 - [docs/MAINTAINING.ko.md](docs/MAINTAINING.ko.md) — 구조, 태그 운영, 도구 업데이트, 저장소 연결.
 - [docs/VERIFY.md](docs/VERIFY.md) — the verification contract and `devctl` reference.

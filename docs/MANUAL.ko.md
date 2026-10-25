@@ -64,9 +64,15 @@ gh pr checks <pr-number>
 | 저장소 | 필수 검사 |
 | --- | --- |
 | `python`, `typescript`, `dotnet` | `platform-verify / check`, `platform-verify / test`, `platform-security / scan` |
-| `other` | `platform-verify / check`, `platform-security / scan` (테스트 태스크 없음) |
+| `other` 기본(`run_tests: false`) | `platform-verify / check`, `platform-security / scan` |
+| `other` + 실제 테스트 태스크(`run_tests: true`) | `platform-verify / check`, `platform-verify / test`, `platform-security / scan` |
+| 신규 Unity(`unity-runner: none`, 기본) | `platform-verify / integrity`, `platform-security / scan` |
+| private Unity(`unity-runner: self-hosted`) | `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan` |
+| Unity UBA(`unity-runner: uba`) | `platform-verify / integrity`, `platform-security / scan` |
 | `project-delta` | `platform-check / check`, `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan` |
 | `dev-platform` | `self-test.yml`이 만드는 작업 이름을 첫 초록 실행 뒤 `gh api .../check-runs`로 확인해 사용한다 |
+
+새 Unity 렌더는 EditMode 전용이며 `unity-runner: none`이 기본이다. 러너가 없는데 `platform-verify / tests`를 필수로 넣거나 self-hosted 작업을 큐에 넣으면 안 된다. public 저장소에는 self-hosted를 등록할 수 없다.
 
 Unity 저장소에 `platform-verify / check`를 넣으면 그 검사는 영원히 나타나지 않아 모든 PR이 막힌다. Unity에서 `mise run check`를 CI에서도 쓰려면 `ci.yml`을 `run-tests: false`로 호출하는 `platform-check` 작업을 따로 두고 그 이름(`platform-check / check`)을 필수 검사에 넣는다. `notify` 작업도 필수 검사에 넣지 않는다.
 
@@ -190,7 +196,7 @@ uv run --project C:/dev/dev-platform/cli devctl unity cloud-build --commit <sha>
 
 ## 5. 릴리스
 
-public Unity 템플릿은 `.github/workflows/release.yml`을 만들지 않으므로 아래 자동 릴리스 절차가 없다. public Unity는 integrity와 nightly integrity만 돌고 릴리스 자산을 만들지 않는다. private Unity와 비-Unity 저장소가 대상이다.
+public Unity와 UBA 템플릿은 `.github/workflows/release.yml`을 만들지 않으므로 아래 자동 릴리스 절차가 없다. UBA를 선택하면 관련 변경에서 cloud-build가 돌 수 있지만 테스트가 아니며 릴리스 자산도 만들지 않는다. private self-hosted Unity와 비-Unity 저장소가 릴리스 대상이다.
 
 ### 5.1 conventional commit
 
@@ -224,6 +230,8 @@ gh workflow run release.yml -R ghdtmdwns133/project-delta --ref main \
 
 ## 6. 새 프로젝트 시작
 
+AI에게 맡길 때는 `C:/dev/dev-platform` 자체를 AI 작업공간으로 열어 루트 `AGENTS.md`가 로드되게 한 뒤, 플래그를 몰라도 자연어로 원하는 앱을 설명하면 된다. 예: “`C:/dev/my-app`에 Vite + React 앱을 만들어 줘. 비공개 저장소로.” 이 안내는 dev-platform 저장소 범위에만 적용되며, 다른 작업공간에서 자동으로 발견되는 전역 설정이 아니다. 생성된 앱에는 이 파일을 그대로 복사하지 말고, 기존 앱의 `AGENTS.md`는 보존하며 필요하면 실제 구조와 명령을 확인해 앱 전용 지침을 새로 쓴다.
+
 dev-platform checkout에서 한 명령으로 시작한다.
 
 ```bash
@@ -234,15 +242,15 @@ cd C:/dev/my-service
 mise run check
 ```
 
-`bootstrap_repo.py`가 Copier로 `template/`을 렌더링하고 `.copier-answers.yml`을 남긴다. 이어서 git 초기화와 첫 커밋, `mise trust`/`mise install`, `mise run prepare`(정의된 경우), pre-commit 훅 설치, `gh repo create`(없을 때만), 저장소 설정·라벨·`platform-gates` ruleset, 가능한 경우 `CODECOV_TOKEN`과 Sentry 설정까지 처리한다. 새로 clone한 저장소는 git 훅을 상속하지 않으므로 그때만 `mise trust && mise install && mise run prepare && mise exec -- pre-commit install`을 한 번 실행한다. 같은 명령을 다시 실행하면 저장소를 새로 만들지 않고 설정과 훅을 재조정한다. 네트워크 호출 없이 계획만 보려면 `--dry-run`을 붙인다.
+`bootstrap_repo.py`가 Copier로 `template/`을 렌더링하고 `.copier-answers.yml`을 남긴다. 이어서 git 초기화와 첫 커밋, `mise trust`/`mise install`, `mise run prepare`(정의된 경우), pre-commit 훅 설치, `gh repo create`(없을 때만), 저장소 설정·라벨·`platform-gates` ruleset을 처리한다. Codecov는 기본 꺼짐이고, Sentry는 명시적으로 요청했을 때만 처리한다. 새로 clone한 저장소는 git 훅을 상속하지 않으므로 그때만 `mise trust && mise install && mise run prepare && mise exec -- pre-commit install`을 한 번 실행한다. 같은 저장소에 `--root`로 다시 실행하면 새 저장소를 만들지 않고 설정과 훅을 재조정한다. 비어 있지 않은 대상에 `--template` 렌더를 다시 실행하면 거부되므로 템플릿 관리 저장소는 `copier update`로 갱신한다. 네트워크 호출 없이 계획만 보려면 `--dry-run`을 붙인다.
 
-`--template`은 `python`, `typescript`, `dotnet`, `unity`, `other` 중 하나다. `--visibility`, `--owner`, `--platform-ref`, `--min-coverage`, `--template-source`(기본 `https://github.com/<owner>/dev-platform`), `--template-ref`(기본 최신 PEP 440 태그), `--local`(개발/self-test용), `--create-repo`/`--no-create-repo`, `--enable-codecov`/`--no-enable-codecov`, `--enable-sentry`/`--no-enable-sentry`를 필요할 때 넘긴다. GitHub 저장소를 만들지 않고 렌더링만 하려면 `--no-create-repo`를 쓰거나 `uvx copier copy`를 직접 실행한다. 정확한 플래그는 `--help`로 확인한다.
+`--template`은 `python`, `typescript`, `dotnet`, `unity`, `other` 중 하나다. `--visibility`, `--owner`, `--platform-ref`, `--min-coverage`(0–100), `--template-source`(기본 `https://github.com/<owner>/dev-platform`), `--template-ref`(기본 최신 PEP 440 태그), `--local`(개발/self-test용), `--create-repo`/`--no-create-repo`를 필요할 때 넘긴다. `--render-only`는 렌더링 후 멈추며 git 초기화, 도구·훅 설치, GitHub 호출을 하지 않는다. 그래도 템플릿은 네트워크에서 받으므로 오프라인이 아니며, 네트워크·쓰기가 모두 없는 것은 `--dry-run`뿐이다. `--adopt`는 `--render-only`와 `--template other|unity`에서만 쓸 수 있고 `--force`와 함께 쓸 수 없다. 기존 파일을 모두 보존하므로 건너뛴 충돌 목록을 읽고 빠진 도구·훅·태스크를 직접 병합해야 한다. 복사가 성공했다는 것만으로 CI·테스트·커버리지가 연결됐다고 보지 않는다. `.copier-answers.yml`이 이미 있는 저장소는 `--adopt`가 아니라 `copier update`로 갱신한다. `--no-create-repo`는 로컬 전용 모드가 아니다. 원격 저장소가 있으면 계속 조회·재조정하고, 없으면 로컬 git·도구·훅 설정을 마친 뒤 저장소 생성·설정·ruleset·시크릿만 건너뛴다. `--run-tests`/`--no-run-tests`는 `other`에서 실제 `mise run test` 태스크가 있을 때만 켠다. `--unity-runner none|self-hosted|uba`는 Unity에서만 유효하고 기본은 `none`이며, public 저장소에는 `self-hosted`를 쓸 수 없다. `--enable-codecov`는 기본 false다. 정확한 플래그는 `--help`로 확인한다.
 
-생성되는 주요 파일은 `.copier-answers.yml`, `mise.toml`, `.pre-commit-config.yaml`, `renovate.json`, caller 워크플로(`ci.yml`, `nightly.yml`, `release.yml`), `.github/rulesets/platform-gates.json`, release-please 설정이다. public Unity는 `release.yml`과 release-please 흐름을 만들지 않는다. devcontainer는 python/typescript/dotnet에만, `.devplatform/config.json`과 Odin 브리지는 Unity에만 들어간다. Unity 결과물은 완전한 Unity 프로젝트가 아니라 Unity 프로젝트 루트에 놓는 플랫폼 계층이므로, 기존 Unity 프로젝트에 렌더링해 `.devplatform/config.json`을 맞춘다. Unity에서 `mise run check`를 CI 필수 검사로도 쓰려면 `ci.yml`을 `run-tests: false`로 호출하는 `platform-check` 작업을 추가한다(`project-delta`가 이렇게 한다). 기존 저장소를 손으로 붙이는 방법과 ruleset 설정은 [ADOPTION.md](ADOPTION.md)에 있다.
+생성되는 주요 파일은 `.copier-answers.yml`, `mise.toml`, `.pre-commit-config.yaml`, `renovate.json`, caller 워크플로(`ci.yml`, `nightly.yml`, `release.yml`), `.github/rulesets/platform-gates.json`, release-please 설정이다. public Unity와 UBA는 `release.yml`과 release-please 흐름을 만들지 않는다. devcontainer는 python/typescript/dotnet에만, `.devplatform/config.json`과 Odin 브리지는 Unity에만 들어간다. Unity 결과물은 완전한 Unity 프로젝트가 아니라 기존 에디터 프로젝트 위에 얹는 계층이다. 새 Unity 렌더는 EditMode 전용이고 `unity-runner: none`이 기본이므로, `ProjectSettings/ProjectVersion.txt`, 실제 씬과 `.meta` GUID, 씬 YAML의 fileId, 활성 빌드 씬을 확인해 `.devplatform/config.json`을 맞추고 러너가 준비되기 전에는 테스트 작업을 요구하지 않는다. UBA를 쓰려면 `unity.cloudBuild.target`도 실제 build target id로 채운다. `project-delta`의 설정을 복사하거나 그 저장소를 이 작업에서 수정하지 않는다. 기존 저장소를 붙이는 방법과 ruleset 설정은 [ADOPTION.md](ADOPTION.md)에 있다.
 
 **이름 계약.** `--name`이 정하는 것은 GitHub 저장소 이름과 프로젝트 배포 이름이다. 제목, `pyproject.toml`의 `[project].name`, `package.json`의 `name`, release-please의 `package-name`, Sentry 프로젝트 slug가 여기서 나온다. 반면 스타터 샘플 내부 식별자는 바뀌지 않는다. Python 샘플의 import 패키지는 `devflow`(`src/devflow`, `from devflow.pipeline import ...`) 그대로이고, .NET 샘플은 솔루션 `DevFlow.slnx`, 라이브러리 `DevFlow.Core`, 루트 네임스페이스 `DevFlow.Core`, 그리고 pack 결과의 NuGet 패키지 ID `DevFlow.Core`(`dist/DevFlow.Core.0.0.0.nupkg`)를 유지한다. `--name`은 .NET 배포 이름을 바꾸지 않는다. Unity 계층은 기존 Unity 프로젝트에 파일을 얹는 것이라 프로젝트 내부 이름을 바꾸지 않는다. bootstrap은 이름을 Copier에 넘기고 Sentry slug를 만들 뿐, 내부 패키지·프로젝트·네임스페이스 식별자를 다시 쓰지 않는다. 이 템플릿들은 프로젝트별 패키지 이름 변환기가 아니라 시작용 샘플이다.
 
-프로젝트 이름을 내부 식별자까지 따라가게 해야 한다면(공식 생성기로 만든 애플리케이션 코드 등) 스택 비종속 `other` 계층에 프로젝트 고유의 `mise` 태스크(`check`, `test`, `build`)를 붙인다. 플랫폼은 언어 어댑터나 이름 변환 코드를 추가하지 않고, 공유 명령은 계속 `mise run check`다.
+프로젝트 이름과 구조가 네이티브 도구를 따라가야 한다면(예: `uv init --lib`로 만든 앱, 공식 프레임워크 생성기 결과) 그 생성기를 먼저 쓰고 `other --adopt --render-only`로 플랫폼 계층만 얹는다. README·매니페스트·lockfile은 보존되고, 기존 `mise.toml`·`.pre-commit-config.yaml`·`ci.yml`은 건너뛰므로 빠진 도구와 훅을 직접 병합해야 한다. 기존 CI가 `ci.yml`을 이미 소유한다면 그 파일을 유지하고 플랫폼 caller를 다른 파일명에 두되 `platform-verify`/`platform-security` 작업 ID를 맞추거나, 네이티브 검사를 유지하고 ruleset을 그에 맞춘다. 플랫폼은 언어 어댑터나 이름 변환 코드를 추가하지 않고, 공유 명령은 계속 `mise run check`다.
 
 ## 7. 비용과 한도
 
@@ -281,7 +289,7 @@ gh api -X POST repos/ghdtmdwns133/<repo>/actions/runs/<run-id>/approve
 
 **Unity 검증이 exit 2로 끝난다.** 에디터를 찾지 못했거나(`Unity 6000.5.1f1 editor not found`), 에디터가 이미 실행 중이다(`Unity editor is running`). 에디터를 닫고 다시 실행하고, 버전이 다르면 `unity.version`과 `ProjectSettings/ProjectVersion.txt`를 맞춘다.
 
-**Codecov가 건너뛰어진다.** `enable-codecov: true`인데 토큰이 없으면 `::warning::`, 비활성화면 `::notice::`가 남고 업로드는 없다. 토큰을 넣고 다시 실행한다. 이 상태는 "연결됨"이 아니라 "미연결"로 본다.
+**Codecov가 건너뛰어진다.** 기본값은 비활성이라 `::notice::`만 남고 업로드하지 않는다. 활성화했는데 토큰이 없으면 `::warning::`이 남는다. 토큰을 넣고 다시 실행하기 전까지는 "연결됨"이 아니라 "미연결"로 본다. Codecov 설정은 [TODO.md](../TODO.md)의 별도 보류 항목이다.
 
 **CodeScene 체크가 안 보인다.** GitHub App 설치와 CodeScene 프로젝트 생성은 별개다. 앱을 모든 저장소에 설치해도 프로젝트가 자동으로 만들어지지 않는다. [CODESCENE.md](CODESCENE.md)의 절차를 확인한다.
 

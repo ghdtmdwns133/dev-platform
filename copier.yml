@@ -29,6 +29,30 @@ visibility:
     Private: private
     Public: public
 
+unity_runner:
+  type: str
+  help: >-
+    Where Unity tests and builds run. "none" runs integrity only, "self-hosted"
+    uses a private repository runner labelled [self-hosted, windows, unity],
+    and "uba" uses Unity Build Automation with its three repository secrets.
+  default: none
+  choices:
+    None: none
+    Self-hosted: self-hosted
+    Unity Build Automation: uba
+  when: "{{ stack == 'unity' }}"
+  validator: >-
+    {% if visibility == 'public' and unity_runner == 'self-hosted' %}A public repository cannot use a self-hosted Unity runner; choose none or uba{% endif %}
+
+run_tests:
+  type: bool
+  help: >-
+    Run the repository's native "mise run test" task in CI. Enable this only
+    once a real test task exists; this template does not create one for the
+    other stack.
+  default: "{{ 'false' if stack in ['other', 'unity'] else 'true' }}"
+  when: "{{ stack == 'other' }}"
+
 platform_ref:
   type: str
   help: dev-platform ref used by caller workflows.
@@ -38,18 +62,20 @@ min_coverage:
   type: int
   help: Minimum line coverage percentage.
   default: 80
+  validator: >-
+    {% if min_coverage < 0 or min_coverage > 100 %}min_coverage must be between 0 and 100 inclusive{% endif %}
 
 create_github_repo:
   type: bool
   help: >-
-    Recorded for bootstrap compatibility. A direct Copier render is offline and
-    does not create or configure the GitHub repository.
+    Recorded for bootstrap compatibility. A direct Copier render does not create
+    or configure the GitHub repository; it still fetches the template.
   default: true
 
 enable_codecov:
   type: bool
   help: Upload coverage to Codecov when a token is available.
-  default: true
+  default: false
 
 enable_sentry:
   type: bool
@@ -60,7 +86,7 @@ enable_sentry:
 _exclude:
   - |
     {% if stack != 'python' %}
-    /src/devflow/**
+    /src/devflow
     /tests/test_pipeline.py
     /pyproject.toml
     /uv.lock
@@ -73,7 +99,7 @@ _exclude:
     /src/main.tsx
     /src/instrument.ts
     /src/vite-env.d.ts
-    /src/components/**
+    /src/components
     /vite.config.ts
     /tsconfig.json
     /eslint.config.js
@@ -82,12 +108,12 @@ _exclude:
     /index.html
     /package.json
     /package-lock.json
-    /scripts/verify-sentry.mjs
+    /scripts
     {% endif %}
   - |
     {% if stack != 'dotnet' %}
-    /src/DevFlow.Core/**
-    /tests/DevFlow.Core.Tests/**
+    /src/DevFlow.Core
+    /tests/DevFlow.Core.Tests
     /DevFlow.slnx
     /Directory.Build.props
     /Directory.Packages.props
@@ -95,9 +121,9 @@ _exclude:
     {% endif %}
   - |
     {% if stack != 'unity' %}
-    /Assets/**
-    /.devplatform/config.json
-    /docs/UNITY-ADAPTER.md
+    /Assets
+    /.devplatform
+    /docs
     {% endif %}
   - |
     {% if stack != 'dotnet' and stack != 'unity' %}
@@ -105,7 +131,12 @@ _exclude:
     {% endif %}
   - |
     {% if stack == 'unity' or stack == 'other' %}
-    /.devcontainer/**
+    /src
+    /.devcontainer
+    {% endif %}
+  - |
+    {% if stack != 'python' and stack != 'dotnet' %}
+    /tests
     {% endif %}
   - |
     {% if stack == 'other' %}
@@ -115,33 +146,35 @@ _exclude:
     /.release-please-manifest.json
     {% endif %}
   - |
-    {% if stack == 'unity' and visibility == 'public' %}
+    {% if stack == 'unity' and (visibility == 'public' or unity_runner != 'self-hosted') %}
     /.github/workflows/release.yml
+    /release-please-config.json
+    /.release-please-manifest.json
     {% endif %}
   - |
     {% if _copier_operation == 'update' %}
     /README.md
     {% if stack == 'python' %}
-    /src/devflow/**
-    /tests/test_pipeline.py
+    /src/devflow
+    /tests
     /pyproject.toml
     /uv.lock
     /.python-version
     {% endif %}
     {% if stack == 'typescript' %}
-    /src/**
+    /src
     /index.html
     /package.json
     /package-lock.json
     {% endif %}
     {% if stack == 'dotnet' %}
-    /src/DevFlow.Core/**
-    /tests/DevFlow.Core.Tests/**
+    /src/DevFlow.Core
+    /tests
     /Directory.Packages.props
     /version.txt
     {% endif %}
     {% if stack == 'unity' %}
-    /.devplatform/config.json
+    /.devplatform
     /version.txt
     {% endif %}
     {% endif %}
@@ -149,9 +182,10 @@ _exclude:
 _message_after_copy: |
   Rendered {{ project_name }} ({{ stack }}) with the dev-platform template.
 
-  Direct Copier renders are offline: they do not create a GitHub repository or
-  apply repository settings. To create or configure the repository, run the
-  bootstrap documented in dev-platform's docs/ADOPTION.md from a retained
-  dev-platform checkout; the bootstrap reports what it completed.
+  A direct Copier render does not call GitHub APIs: it does not create a
+  repository or apply repository settings (it still fetches the template). To
+  create or configure the repository, run the bootstrap documented in
+  dev-platform's docs/ADOPTION.md from a retained dev-platform checkout; the
+  bootstrap reports what it completed.
 
   Renovate keeps the template up to date after the repository is onboarded.

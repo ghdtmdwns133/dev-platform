@@ -18,7 +18,7 @@ Repository generated from [dev-platform](https://github.com/{{ owner }}/dev-plat
 mise trust
 mise install
 mise run check
-{% if stack == 'python' or stack == 'typescript' or stack == 'dotnet' %}
+{% if stack == 'python' or stack == 'typescript' or stack == 'dotnet' or (stack == 'other' and run_tests) %}
 mise run test
 {% endif %}
 ```
@@ -31,6 +31,8 @@ mise run test
 `mise run test` runs Vitest with coverage and writes `coverage/coverage-final.json` and `coverage/lcov.info`.
 {% elif stack == 'dotnet' %}
 `mise run test` runs `dotnet test` and writes Cobertura coverage under `coverage/`.
+{% elif stack == 'other' and run_tests %}
+`mise run test` runs the repository's native test task. This template never creates that task; add it to `mise.toml` before enabling CI tests.
 {% elif stack == 'unity' %}
 Unity integrity checks do not need the editor:
 
@@ -38,10 +40,12 @@ Unity integrity checks do not need the editor:
 uvx --from git+https://github.com/{{ owner }}/dev-platform@{{ platform_ref }}#subdirectory=cli devctl unity integrity
 ```
 
-{% if visibility == 'public' %}
-Public repositories run integrity only; CI calls `unity.yml` with `unity-runner: none`.
+{% if unity_runner == 'none' %}
+No Unity runner is configured; CI calls `unity.yml` with `unity-runner: none` and runs integrity only. Unity tests and builds are skipped.
+{% elif unity_runner == 'self-hosted' %}
+Full Unity verification runs on the private repository's self-hosted runner (`unity-runner: self-hosted`), labelled `[self-hosted, windows, unity]`.
 {% else %}
-Full Unity verification runs on the repository's self-hosted runner (`unity-runner: self-hosted`).
+CI uses Unity Build Automation for a cloud build (`unity-runner: uba`); integrity still runs on GitHub-hosted runners. The cloud build is not a test check and never substitutes for the EditMode suite. Set the `UNITY_BUILD_API_KEY`, `UNITY_BUILD_ORG_ID` and `UNITY_BUILD_PROJECT_ID` secrets before the first run.
 {% endif %}
 {% endif %}
 
@@ -49,12 +53,14 @@ Full Unity verification runs on the repository's self-hosted runner (`unity-runn
 
 `.github/workflows/ci.yml` calls the shared platform workflows at `{{ platform_ref }}`. It also runs on pull requests, so the required checks are the same for humans and automation.
 
-{% if stack == 'unity' and visibility == 'public' %}
-Required checks are `platform-verify / integrity` and `platform-security / scan`.
-{% elif stack == 'unity' %}
+{% if stack == 'unity' and unity_runner == 'none' %}
+Required checks are `platform-verify / integrity` and `platform-security / scan`. No Unity test or build check is required because no Unity runner is configured.
+{% elif stack == 'unity' and unity_runner == 'self-hosted' %}
 Required checks are `platform-verify / integrity`, `platform-verify / tests` and `platform-security / scan`. Unity tests run only on a runner labeled `[self-hosted, windows, unity]`.
+{% elif stack == 'unity' %}
+Required checks are `platform-verify / integrity` and `platform-security / scan`. The `platform-verify / cloud-build` check appears only when Unity files change and is not a required check.
 {% elif stack == 'other' %}
-Required checks are `platform-verify / check` and `platform-security / scan`.
+Required checks are `platform-verify / check`{% if run_tests %}, `platform-verify / test`{% endif %} and `platform-security / scan`.
 {% else %}
 Required checks are `platform-verify / check`, `platform-verify / test` and `platform-security / scan`.
 {% endif %}
@@ -65,7 +71,7 @@ Renovate reads `renovate.json` and extends the shared preset `github>{{ owner }}
 
 ## Releases
 
-{% if stack == 'other' or (stack == 'unity' and visibility == 'public') %}
+{% if stack == 'other' or (stack == 'unity' and (visibility == 'public' or unity_runner != 'self-hosted')) %}
 Releases are not configured for this profile.
 {% else %}
 Conventional commits drive release-please. Merging a Release PR creates the tag; `.github/workflows/release.yml` builds the artifact and attaches it to the release.
@@ -79,4 +85,4 @@ The Copier answers file records the template version. Update the platform layer 
 uvx copier update --defaults
 ```
 
-Review the resulting diff before committing. Application source, dependencies and the README are project-owned and are not overwritten by template updates.
+Review the resulting diff before committing. Application source, dependencies and the README are project-owned and are not overwritten by template updates. Copier's three-way update merges template changes into project-owned `mise.toml` and caller workflows; resolve any conflict markers before committing.

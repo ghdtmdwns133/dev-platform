@@ -1,5 +1,9 @@
 # Adopting dev-platform
 
+Repository-wide conventions and the bounded AI project-intent workflow are in
+[AGENTS.md](../AGENTS.md). Use this document for the provisioning commands and
+ruleset contract.
+
 ## New repository: one command
 
 From a dev-platform checkout:
@@ -13,11 +17,13 @@ uv run --script C:/dev/dev-platform/scripts/bootstrap_repo.py \
 
 `--template` is one of `python`, `typescript`, `dotnet`, `unity`, `other`.
 Optional flags: `--owner` (default `ghdtmdwns133`), `--visibility private|public`
-(default `private`), `--min-coverage` (default 80), `--platform-ref` (default
+(default `private`), `--min-coverage` (default 80, validated 0–100), `--platform-ref` (default
 `v1`), `--template-source` (default `https://github.com/<owner>/dev-platform`),
 `--template-ref` (default latest PEP 440 tag), `--local` (render from this
 checkout for development/self-test), `--create-repo`/`--no-create-repo`,
-`--enable-codecov`/`--no-enable-codecov`,
+`--render-only`, `--adopt`, `--run-tests`/`--no-run-tests` (`other` only),
+`--unity-runner none|self-hosted|uba` (Unity only),
+`--enable-codecov`/`--no-enable-codecov` (default off),
 `--enable-sentry`/`--no-enable-sentry` (TypeScript only), `--force`, and
 `--dry-run`. Run `uv run --script scripts/bootstrap_repo.py --help` for the
 exact set in the checkout.
@@ -39,16 +45,49 @@ The command is the whole creation path:
 7. Creates or updates the `platform-gates` ruleset from the rendered
    `.github/rulesets/platform-gates.json` (non-fast-forward plus the stack's
    required checks, with the repository admin bypass).
-8. Sets `CODECOV_TOKEN` when `--enable-codecov` is on and the environment or
-   Doppler (`dev-platform-shared/prd`) supplies it; otherwise prints a notice
-   and continues.
+8. Sets `CODECOV_TOKEN` only when `--enable-codecov` is explicitly on (the
+   default is off) and the environment or Doppler (`dev-platform-shared/prd`)
+   supplies it; otherwise prints a notice and continues.
 9. When Sentry is enabled and the credentials exist, creates the Sentry project
    and sets its four secrets; otherwise prints a notice and continues.
 
-The bootstrap is idempotent. Re-running it reconciles settings, labels and the
-ruleset; it does not need a new repository and never prints secret values.
-`--dry-run` prints the Copier command and every planned `gh`/API call without
-network access, rendering or writes.
+`--render-only` requires `--template` and stops after Copier: it does no git
+initialization, tool/hook installation, GitHub API work or secret handling. It
+can still fetch the pinned template and Copier, so it is a local-render path,
+not an offline one; only `--dry-run` is network-free and write-free.
+
+`--adopt` requires `--render-only`, `--template other|unity`, and cannot be
+combined with `--force`. It overlays the platform with Copier `--skip '*'`, so
+**every existing file is preserved**, including `README.md`, native manifests,
+lockfiles, `mise.toml`, `.pre-commit-config.yaml` and `.github/workflows/ci.yml`.
+Read the skipped-file output rather than assuming integration: merge any missing
+tools, hooks and tasks into the preserved files yourself, and keep the platform
+caller (or native CI) and the ruleset required checks in agreement. A
+successful copy is not proof that CI, tests or coverage are wired. `--adopt`
+rejects a destination that is missing or not a directory and refuses a
+repository that already has `.copier-answers.yml`; update that repository with
+`copier update` instead. Do not use `--adopt` to recopy an existing Copier
+repository. After an adopt render, initialize Git if the generator left no
+repository or commit, review and stage only intended files, run `mise trust &&
+mise install`, run `prepare` only when defined, and install the pre-commit
+hook. Merge missing `.gitignore`/`.editorconfig` entries with the tool/hook/CI
+changes so report and `.dev-platform` outputs do not dirty the tree. A check
+over no tracked files is not evidence of a working gate.
+
+`--run-tests`/`--no-run-tests` are accepted only with `--template other`.
+Leave the flag unset unless the native project already has a real `mise run
+test` task; then opt in so the caller runs tests and the ruleset can require
+`platform-verify / test`. Unity renders are EditMode-only and default to
+`unity-runner: none`. `--unity-runner` accepts `none`, `self-hosted` or `uba`;
+`self-hosted` is private-only and must not be selected before a runner is
+registered. `uba` requires Unity Build Automation credentials.
+
+The settings-only `--root` path is idempotent. Re-running it reconciles
+settings, labels and the ruleset; it does not need a new repository and never
+prints secret values. Re-running a non-empty `--template` render is refused;
+use `copier update` for a template-managed repository. `--dry-run` prints the
+Copier command and every planned `gh`/API call without network access,
+rendering or writes.
 
 Prerequisites are `uv` (for `uv run --script`), `git`, `mise`, and an
 authenticated `gh`. The bootstrap runs a pinned Copier (`uvx copier@9.19.1`).
@@ -64,10 +103,22 @@ pure-safe: `copier.yml` has no `_tasks`, so a direct render also works and
 uvx copier copy https://github.com/ghdtmdwns133/dev-platform my-service
 ```
 
-A direct Copier render never touches GitHub. Use the bootstrap for repository
-creation and settings; it reports what it completed. With `--no-create-repo`, the bootstrap still
-checks whether the repository exists; if it does not, it prints a notice and
-skips settings and the ruleset. `--dry-run` is the no-network path.
+A direct Copier render does not call GitHub APIs or create a repository, but it
+still fetches the template over the network. Use the bootstrap for repository
+creation and settings; it reports what it completed. `--render-only` is the
+bootstrap's local-render path. With `--no-create-repo`, the bootstrap still
+queries whether the repository exists; if it does, it reconciles settings and
+the ruleset. If it does not, it still performs the local Git/tool/hook setup,
+then prints a notice and skips repository creation, settings, ruleset and
+secrets. `--no-create-repo` is not a local-only or offline mode. Only
+`--dry-run` makes no network calls and no writes.
+
+Existing-checkout reconciliation (a run without `--render-only` that targets an
+existing `--root`) requires a clean git checkout at the repository root with no
+uncommitted or untracked changes. For an existing repository, `origin` must
+resolve exactly to the requested `<owner>/<name>`; the bootstrap fails before
+installing tools or changing GitHub settings when it does not. Do not commit or
+push unrelated user files merely to satisfy the clean checkout requirement.
 
 After creation, the bootstrap has already run `mise trust`/`mise install`,
 `mise run prepare` (where defined), and installed the pre-commit hook:
@@ -75,7 +126,7 @@ After creation, the bootstrap has already run `mise trust`/`mise install`,
 ```bash
 cd my-service
 mise run check
-mise run test
+mise run test   # only when the project defines a real test task
 ```
 
 A fresh clone later cannot inherit git hooks, so run the one-time setup there:
@@ -86,10 +137,11 @@ mise run prepare
 mise exec -- pre-commit install
 ```
 
-`mise run check` and `mise run test` are exactly what `ci.yml` runs. The
-mise-managed toolchain pins live in the generated `mise.toml`; a Unity editor
-is supplied by the host and configured in `.devplatform/config.json`. There is
-no `versions.json`.
+`mise run check`, plus `mise run test`/`mise run build` when the project
+defines them, are exactly what CI and release automation run. The mise-managed
+toolchain pins live in the generated `mise.toml`; a Unity editor is supplied by
+the host and configured in `.devplatform/config.json`. There is no
+`versions.json`.
 
 ## Naming contract
 
@@ -120,16 +172,42 @@ project-native `mise` tasks (`check`, `test`, `build` as applicable). The
 platform adds no language adapter and no naming code, and the shared command
 stays `mise run check`.
 
-## Existing repository (manual adoption)
+## Existing repository: adopt or manual adoption
 
-Copier updates apply only to a repository generated from the template and
-carrying `.copier-answers.yml`. Do not add that file to an existing repository
-just to claim provenance; a hand-migrated repository has no Copier history, and
-`copier update` would be misleading.
+An existing native application or editor-created Unity project should normally
+use the overlay instead of hand-copying files:
 
-For an existing repository, add the generated surfaces explicitly:
+```bash
+uv run --script scripts/bootstrap_repo.py \
+  --template other \
+  --adopt --render-only \
+  --name <repo> --dest <existing-app>
+```
 
-1. `mise.toml` with the stack's `[tools]` and `check`/`test`/`build` tasks.
+For Unity, use `--template unity`; inspect the project's actual
+`ProjectSettings/ProjectVersion.txt`, main scene and `.meta` GUID, scene YAML
+fileIds, required objects and first enabled build scene before trusting the
+rendered `.devplatform/config.json`. New Unity renders are EditMode-only and
+default to `unity-runner: none`; do not copy `project-delta` defaults. UBA also
+requires `unity.cloudBuild.target` to be set to the real build target id.
+
+`--adopt` legitimately writes `.copier-answers.yml` because Copier now owns the
+platform layer's provenance. It rejects a destination that already has that
+file: use `copier update` for an existing Copier repository, never a recopy.
+Because `--skip '*'` preserves **all** existing files, read the skipped-file
+list and merge missing tools, hooks and tasks into the preserved
+`mise.toml`/`.pre-commit-config.yaml` yourself. If a native CI workflow already
+owns `.github/workflows/ci.yml`, keep it and add the platform caller under a
+different filename with the same `platform-verify` and `platform-security` job
+IDs, or explicitly keep the native checks and make the ruleset match them. A
+successful copy alone does not prove CI or test coverage is integrated.
+
+For a repository where you deliberately do not want Copier provenance, do not
+add `.copier-answers.yml`; add the generated surfaces manually:
+
+1. `mise.toml` with the project's real tools and `check`/`test`/`build` tasks
+   (only those that actually exist), including the pinned `pre-commit` tool if
+   an existing `mise.toml` is preserved.
 2. `.pre-commit-config.yaml` with the same hooks the platform runs.
 3. `.devplatform/config.json` for a Unity repository (profile, coverage floor,
    scene and integrity settings).
@@ -139,8 +217,8 @@ For an existing repository, add the generated surfaces explicitly:
    needed.
 5. `renovate.json` with `"extends": ["github>ghdtmdwns133/dev-platform"]`.
 6. `release-please-config.json` and `.release-please-manifest.json` for
-   non-Unity or private Unity repositories that use release-please. Public
-   Unity has no release workflow.
+   non-Unity or private self-hosted Unity repositories that use
+   release-please. Public Unity and UBA renders have no release workflow.
 7. `.github/rulesets/platform-gates.json` if the bootstrap should reconcile the
    ruleset; the bootstrap prints a notice and skips the ruleset when the file is
    absent.
@@ -149,7 +227,8 @@ For the existing `project-delta` repository, the Unity surfaces are the
 `.devplatform/config.json` file, the caller `ci.yml` that calls `unity.yml`
 with `unity-runner: self-hosted`, and the `platform-check` caller that invokes
 `ci.yml` with `run-tests: false`. It is EditMode-only (`unity.testPlatforms` is
-`["EditMode"]`). Do not add `.copier-answers.yml`.
+`["EditMode"]`). Do not add `.copier-answers.yml`, do not run Unity from
+unrelated work, and leave this repository's explicit runner unchanged.
 
 For `project-delta`, verify the actual checks after the first run and include
 `platform-check / check` alongside the two Unity checks in the ruleset if the
@@ -168,10 +247,12 @@ uv run --script C:/dev/dev-platform/scripts/bootstrap_repo.py \
 
 Remove `--dry-run` to apply. It skips `gh repo create`, updates the settings,
 labels and ruleset (when the JSON is present), and sets secrets only when their
-values are available. When the remote repository already exists, the local
-`origin` must resolve to exactly `<owner>/<name>`; a missing or different origin
-exits 1 with clone/reconcile instructions and makes no settings or ruleset
-changes.
+values are available. Full reconciliation requires a clean git checkout with no
+uncommitted or untracked changes. When the remote repository already exists,
+the local `origin` must resolve to exactly `<owner>/<name>`; a missing or
+different origin exits 1 with clone/reconcile instructions and makes no
+settings or ruleset changes. Do not commit unrelated user files just to make
+the checkout clean.
 
 ## Required status checks
 
@@ -185,10 +266,17 @@ gh api repos/ghdtmdwns133/<repo>/commits/main/check-runs \
 | Repository type | Required checks |
 | --------------- | --------------- |
 | `python`, `typescript`, `dotnet` | `platform-verify / check`, `platform-verify / test`, `platform-security / scan` |
-| `other` | `platform-verify / check`, `platform-security / scan` (no test task) |
-| Public Unity (`unity-runner: none`) | `platform-verify / integrity`, `platform-security / scan` |
-| Private Unity (`unity-runner: self-hosted`) | `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan`; add `platform-verify / cloud-build` only in UBA mode |
+| `other`, default (`run_tests: false`) | `platform-verify / check`, `platform-security / scan` |
+| `other` with a real test task (`run_tests: true`) | `platform-verify / check`, `platform-verify / test`, `platform-security / scan` |
+| Unity, `unity-runner: none` (new default) | `platform-verify / integrity`, `platform-security / scan` |
+| Unity, private `unity-runner: self-hosted` | `platform-verify / integrity`, `platform-verify / tests`, `platform-security / scan` |
+| Unity, `unity-runner: uba` | `platform-verify / integrity`, `platform-security / scan`; cloud-build runs only for Unity-relevant changes and is never required |
 | Unity also calling `ci.yml` with `run-tests: false` (project-delta) | add `platform-check / check` to the applicable Unity checks |
+
+New Unity renders are EditMode-only and default to `unity-runner: none`; do not
+queue self-hosted jobs for a repository that has no runner, and do not require
+`platform-verify / tests` for a `none` render. Public repositories must never
+use `self-hosted`.
 
 Unity repositories use `unity.yml` for the Unity gates and never produce
 `platform-verify / check`. A repository that also wants the same `mise run
@@ -232,12 +320,15 @@ gh api -X POST repos/ghdtmdwns133/<repo>/rulesets --input - <<'JSON'
 JSON
 ```
 
-For `other`, omit the `platform-verify / test` context. For a Unity repository,
-replace the first two contexts with `platform-verify / integrity` and, only for
-a private self-hosted runner, `platform-verify / tests`; UBA mode adds
-`platform-verify / cloud-build`. If it has a `platform-check` caller, add
-`platform-check / check` as well. The template already renders the public
-(integrity only) or private (integrity + tests) ruleset. The single bypass is the repository admin role
+For `other`, omit the `platform-verify / test` context unless a real test task
+exists and `run_tests` is true. For a Unity repository, use
+`platform-verify / integrity` plus `platform-verify / tests` only for an
+explicit private `self-hosted` runner. `uba` keeps integrity only; its
+`cloud-build` job runs only when Unity-relevant files change and must not be a
+required check. `unity-runner: none` requires integrity only. If it has a
+`platform-check` caller, add `platform-check / check` as well. The template
+renders the ruleset for the selected `unity_runner`, so do not require a job
+that the caller does not schedule. The single bypass is the repository admin role
 (`actor_id: 5`), so the owner can still push directly while bots and pull
 requests must pass the gates. If a ruleset with the same name exists, update it
 with `PUT repos/.../rulesets/<id>` rather than creating a duplicate.
@@ -296,13 +387,18 @@ Renovate handles dependency PRs.
 
 ### Copier updates
 
-Every generated repository has `.copier-answers.yml`. `copier update` applies
-the template delta in place:
+Every generated or adopted repository has `.copier-answers.yml`. `copier update`
+applies the template delta in place:
 
 ```bash
 cd my-service
 uvx copier update --defaults
 ```
+
+Never run a second `copier copy`, `--adopt`, or `--force` over a repository that
+already contains `.copier-answers.yml`; that is an update, not a recopy. Review
+the update diff before committing, and keep project-owned application files
+under the template's update exclusions.
 
 Renovate's Copier manager detects `.copier-answers*.yml`, treats the template
 source as a `git-tags` dependency and uses PEP 440 versioning
@@ -323,10 +419,11 @@ the semver tags exist.
 
 ## Release automation
 
-Non-Unity and private Unity repositories contain `release-please-config.json`
-and `.release-please-manifest.json`, plus the caller `release.yml`. Public
-Unity renders omit `release.yml` entirely, so they have no release-please flow
-and produce no release assets. For the repositories that do have it,
+Non-Unity and private self-hosted Unity repositories contain
+`release-please-config.json` and `.release-please-manifest.json`, plus the
+caller `release.yml`. Public Unity and UBA renders omit `release.yml` entirely,
+so they have no release-please flow and produce no release assets. For the
+repositories that do have it,
 `release.yml` runs on pushes to `main`, a daily schedule, and manual dispatch. It asks release-please to open or
 update the Release PR, labels it `automerge`, and enables GitHub auto-merge with
 `gh pr merge --auto --squash`. Merging the Release PR creates the tag. Because a

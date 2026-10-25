@@ -44,10 +44,6 @@ jobs:
       artifact-name: unity-build
       runs-on: '["self-hosted","windows","unity"]'
       platform-ref: {{ platform_ref }}
-    secrets:
-      unity_build_api_key: {% raw %}${{ secrets.UNITY_BUILD_API_KEY }}{% endraw %}
-      unity_build_org_id: {% raw %}${{ secrets.UNITY_BUILD_ORG_ID }}{% endraw %}
-      unity_build_project_id: {% raw %}${{ secrets.UNITY_BUILD_PROJECT_ID }}{% endraw %}
 {% elif stack == 'typescript' %}
       build-command: npm ci && npm run build && zip -r dist.zip dist
       artifact-path: dist.zip
