@@ -339,8 +339,8 @@ SHA when a tag is created or moved, and keep the table current:
 
 | Tag | Commit SHA | Date | Notes |
 | --- | ---------- | ---- | ----- |
-| `v1` | record at release | — | moving; callers resolve it |
-| `v1.N.0` | record at release | — | immutable template version |
+| `v1` | `b6ee2db283ea63b5c99b3c4e89540332a06f871a` | 2026-10-25 | Moving tag; callers resolve it. Points at the same commit as `v1.1.0`. |
+| `v1.1.0` | `b6ee2db283ea63b5c99b3c4e89540332a06f871a` | 2026-10-25 | Immutable Copier/Renovate template version. |
 
 Every consumer must use a `v1` or `v1.N.0` whose workflows, template and CLI are
 consistent. Do not move `v1` to a red commit.
