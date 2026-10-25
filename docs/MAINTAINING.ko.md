@@ -67,20 +67,20 @@ flowchart LR
    release_sha=$(git rev-parse HEAD)
 
    # 1) 이동 태그(v1)를 먼저, 로컬에서만 만든다. 아직 push하지 않는다.
-   git tag -f -a v1 -m "platform v1: v1.2.0" "$release_sha"
+   git tag -f -a v1 -m "platform v1: v1.3.0" "$release_sha"
 
    # 2) 1초 뒤에 불변 버전 태그를 만든다(taggerdate가 엄격히 더 크게).
-   #    직전 릴리스가 v1.1.0이므로 다음 버전은 v1.2.0이다.
+   #    직전 릴리스가 v1.2.0이므로 다음 버전은 v1.3.0이다.
    sleep 1
-   git tag -a v1.2.0 -m "platform v1.2.0" "$release_sha"
+   git tag -a v1.3.0 -m "platform v1.3.0" "$release_sha"
 
    # 3) 단정이 성공할 때만 두 ref를 원자적으로 게시한다.
    #    force는 이동 별칭에만 붙이고, 불변 버전 태그에는 붙이지 않는다.
-   test "$(git describe --tags --always "$release_sha")" = "v1.2.0" &&
-     git push --atomic origin +refs/tags/v1 refs/tags/v1.2.0
+   test "$(git describe --tags --always "$release_sha")" = "v1.3.0" &&
+     git push --atomic origin +refs/tags/v1 refs/tags/v1.3.0
    ```
 
-   `git push --atomic`은 두 ref를 모두 갱신하거나 모두 거부하므로, 별칭만 먼저 게시되어 불변 버전이 없는 구간이 생기지 않는다. `+`는 `v1`에만 있고 불변 태그에는 없으므로 서버는 기존 `v1.N.0`을 덮어쓰는 push를 거부한다. 단정이 실패하면 아무것도 게시되지 않았으므로 로컬 태그를 지우고(`git tag -d v1 v1.2.0`) `git fetch --tags --force`로 게시된 `v1`을 복원한 뒤, 대상 커밋과 시각을 고쳐 다시 만든다. 이미 게시된 불변 버전 태그는 다시 주석 달거나 이동하지 않는다.
+   `git push --atomic`은 두 ref를 모두 갱신하거나 모두 거부하므로, 별칭만 먼저 게시되어 불변 버전이 없는 구간이 생기지 않는다. `+`는 `v1`에만 있고 불변 태그에는 없으므로 서버는 기존 `v1.N.0`을 덮어쓰는 push를 거부한다. 단정이 실패하면 아무것도 게시되지 않았으므로 로컬 태그를 지우고(`git tag -d v1 v1.3.0`) `git fetch --tags --force`로 게시된 `v1`을 복원한 뒤, 대상 커밋과 시각을 고쳐 다시 만든다. 이미 게시된 불변 버전 태그는 다시 주석 달거나 이동하지 않는다.
 
    두 태그가 같은 초에 만들어지면 `git describe`가 엉뚱한 태그를 고를 수 있으므로, 버전 태그를 만들 때 `GIT_COMMITTER_DATE`로 1초 뒤를 지정하거나 위처럼 `sleep 1`로 기다린다. 이 대기는 로컬 taggerdate의 초 단위 순서를 보장하기 위한 것이고, 원격 API를 재조회하는 절차가 아니다. `git describe`의 출력이 새 버전 태그와 같지 않으면 push하지 않는다. 태그 객체 SHA와 커밋 SHA를 [ADOPTION.md](ADOPTION.md)의 표에 기록한다. `v1`은 항상 최신 호환 템플릿/워크플로를 가리키고, `v1.N.0`은 절대 이동하지 않는다. 문서 커밋 뒤에는 태그를 이동하지 않는다.
 

@@ -465,11 +465,14 @@ SHA when a tag is created or moved, and keep the table current:
 
 | Tag | Tag object | Commit SHA | Date | Notes |
 | --- | ---------- | ---------- | ---- | ----- |
-| `v1` | `965871597f74be1dd97535e30232dad33b2c8c9c` | `b6ee2db283ea63b5c99b3c4e89540332a06f871a` | 2026-10-25 | Moving alias; callers resolve it. Created **first**. |
-| `v1.1.0` | `6b5fcc233441b44ba3addda92a610846a314a21b` | `b6ee2db283ea63b5c99b3c4e89540332a06f871a` | 2026-10-26 | Immutable Copier/Renovate version. Created **last**, with a strictly later taggerdate. |
+| `v1` | `51082548bcf6c23e83f25b1da6ce5c1125da9109` | `e3869334914342edfe4a1f26bed439c5d74412f7` | 2026-10-26 | Moving alias; callers resolve it. Updated after [CI run 40224152661](https://github.com/ghdtmdwns133/dev-platform/actions/runs/40224152661) passed. |
+| `v1.2.0` | `79b4974d5a0ca8811e6e7af7c5a4d41c20c8d7cc` | `e3869334914342edfe4a1f26bed439c5d74412f7` | 2026-10-26 | Immutable Copier/Renovate version; published atomically with `v1` after the same green run. |
+| `v1.1.0` | `6b5fcc233441b44ba3addda92a610846a314a21b` | `b6ee2db283ea63b5c99b3c4e89540332a06f871a` | 2026-10-26 | Historical immutable version. Created **last** in that release, with a strictly later taggerdate. |
 
 `git describe --tags --always b6ee2db283ea63b5c99b3c4e89540332a06f871a`
-returns `v1.1.0`; Copier reports template version `1.1.0`.
+returns `v1.1.0`; the newer
+`git describe --tags --always e3869334914342edfe4a1f26bed439c5d74412f7`
+returns `v1.2.0`. Copier reports the selected template version.
 
 Every consumer must use a `v1` or `v1.N.0` whose workflows, template and CLI are
 consistent. Do not move `v1` to a red commit. The release procedure is
