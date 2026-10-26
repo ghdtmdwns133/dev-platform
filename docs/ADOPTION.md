@@ -457,7 +457,7 @@ commit SHAs with the human-readable tag in a trailing comment.
 Two tag families have different jobs:
 
 - `v1` — moving tag used by caller workflows and `platform_ref`.
-- `v1.N.0` — immutable PEP 440 tags used by Copier and Renovate for template
+- `v1.N.P` — immutable PEP 440 tags used by Copier and Renovate for template
   updates.
 
 The integration owner creates and moves these tags; no slice does. Record the
@@ -465,7 +465,9 @@ SHA when a tag is created or moved, and keep the table current:
 
 | Tag | Tag object | Commit SHA | Date | Notes |
 | --- | ---------- | ---------- | ---- | ----- |
-| `v1` | `51082548bcf6c23e83f25b1da6ce5c1125da9109` | `e3869334914342edfe4a1f26bed439c5d74412f7` | 2026-10-26 | Moving alias; callers resolve it. Updated after [CI run 40224152661](https://github.com/ghdtmdwns133/dev-platform/actions/runs/40224152661) passed. |
+| `v1` | `ec38e74f376e76c1a2d9931f58c972ea2292a492` | `ab096c2728609a91830836c58f0d61a9222bdf62` | 2026-10-26 | Moving alias; updated after [CI run 40319905248](https://github.com/ghdtmdwns133/dev-platform/actions/runs/40319905248) passed. |
+| `v1.3.1` | `bc68946a84be51e082ef0e37ebae13528b4180c6` | `ab096c2728609a91830836c58f0d61a9222bdf62` | 2026-10-26 | Private-repository change detection fix. |
+| `v1.3.0` | `95fb0f3454a6aa3422b013f2b3216066146851f2` | `b4f4183313d559f93e096c774acd5d17a7617994` | 2026-10-26 | Docs CI and verification gates; superseded by v1.3.1 for private repository pushes. |
 | `v1.2.0` | `79b4974d5a0ca8811e6e7af7c5a4d41c20c8d7cc` | `e3869334914342edfe4a1f26bed439c5d74412f7` | 2026-10-26 | Immutable Copier/Renovate version; published atomically with `v1` after the same green run. |
 | `v1.1.0` | `6b5fcc233441b44ba3addda92a610846a314a21b` | `b6ee2db283ea63b5c99b3c4e89540332a06f871a` | 2026-10-26 | Historical immutable version. Created **last** in that release, with a strictly later taggerdate. |
 
@@ -474,13 +476,13 @@ returns `v1.1.0`; the newer
 `git describe --tags --always e3869334914342edfe4a1f26bed439c5d74412f7`
 returns `v1.2.0`. Copier reports the selected template version.
 
-Every consumer must use a `v1` or `v1.N.0` whose workflows, template and CLI are
+Every consumer must use a `v1` or `v1.N.P` whose workflows, template and CLI are
 consistent. Do not move `v1` to a red commit. The release procedure is
 **alias first, version last**: create annotated `v1` and the immutable
-`v1.N.0` locally, with a strictly later taggerdate for the version tag (a plain
+`v1.N.P` locally, with a strictly later taggerdate for the version tag (a plain
 one-second gap between the two `git tag -a` calls is enough); assert
-that `git describe` returns `v1.N.0`; only then publish both refs in one atomic
-push, `git push --atomic origin +refs/tags/v1 refs/tags/v1.N.0`. The force
+that `git describe` returns `v1.N.P`; only then publish both refs in one atomic
+push, `git push --atomic origin +refs/tags/v1 refs/tags/v1.N.P`. The force
 applies to the moving alias only: the immutable ref is pushed without `+`, so
 the server rejects an overwrite. A failed assertion or a failed atomic push
 publishes nothing, so the local tags can be recreated; a published `v1.N.0`
