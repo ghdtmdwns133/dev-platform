@@ -182,6 +182,12 @@ def _validate_unity(value: Any) -> dict[str, Any]:
     )
     unity["templateScripts"] = _expect_str_list(unity["templateScripts"], "unity.templateScripts")
     unity["testPlatforms"] = _expect_str_list(unity["testPlatforms"], "unity.testPlatforms")
+    if not unity["testPlatforms"] or len(set(unity["testPlatforms"])) != len(
+        unity["testPlatforms"]
+    ):
+        raise _error("unity.testPlatforms must be a non-empty list without duplicates")
+    if any(platform not in {"EditMode", "PlayMode"} for platform in unity["testPlatforms"]):
+        raise _error("unity.testPlatforms must contain only EditMode and/or PlayMode")
     unity["coverageAssemblyFilters"] = _expect_str_list(
         unity["coverageAssemblyFilters"], "unity.coverageAssemblyFilters"
     )

@@ -146,6 +146,12 @@ does not contain a complete Unity project.
 
 ## CI behaviour
 
+The caller classifies changed files: code changes run the normal checks,
+Markdown changes run the shared `docs.yml` workflow (markdownlint and
+offline local-link checks), and mixed changes run both. A single
+`quality-gate` status is required for merging; skipped checks are allowed
+only when that category of files did not change.
+
 - Non-Unity callers name the `ci.yml` job `platform-verify`, producing
   `platform-verify / check` and, when `run-tests` is true,
   `platform-verify / test`. `other` defaults to `run-tests: false`, so it has
@@ -170,6 +176,8 @@ does not contain a complete Unity project.
 - Failures open or update an issue labeled `ci-alert` with the workflow, job,
   commit and run URL. The Unity notification also includes
   `devctl verify --profile unity` as the local repro command.
+- Unity coverage is required when enabled: missing or invalid coverage results
+  and empty test runs fail instead of being accepted as successful.
 - Renovate opens dependency and action-update PRs once the installed app
   processes the repository; auto-merge uses GitHub's native auto-merge and the
   required checks from the ruleset. Release PRs are handled by `release.yml`.

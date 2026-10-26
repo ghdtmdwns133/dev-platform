@@ -3,13 +3,7 @@ name: CI
 on:
   push:
     branches: ["**"]
-    paths-ignore:
-      - docs/**
-      - "**/*.md"
-  pull_request:
-    paths-ignore:
-      - docs/**
-      - "**/*.md"
+  pull_request: {}
   workflow_dispatch: {}
 
 permissions:
@@ -20,7 +14,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+{% raw %}
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.paths.outputs.code }}
+      docs: ${{ steps.paths.outputs.docs }}
+      docs_files: ${{ steps.paths.outputs.docs_files }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: paths
+        with:
+          base: ${{ github.event_name == 'push' && github.event.before || github.event.repository.default_branch }}
+          predicate-quantifier: some-with-excludes
+          list-files: json
+          filters: |
+            docs:
+              - '**/*.{md,mdx}'
+            code:
+              - '**'
+              - '!**/*.{md,mdx}'
+
+{% endraw %}
   platform-verify:
+{% raw %}
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' || github.event_name == 'workflow_dispatch' }}
+{% endraw %}
     name: platform-verify
     permissions:
       contents: read
@@ -52,6 +79,10 @@ jobs:
 {% endif %}
 
   platform-security:
+{% raw %}
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' || github.event_name == 'workflow_dispatch' }}
+{% endraw %}
     name: platform-security
     permissions:
       contents: read
@@ -61,3 +92,41 @@ jobs:
     uses: {{ owner }}/dev-platform/.github/workflows/security.yml@{{ platform_ref }}
     with:
       upload-sarif: {{ 'true' if visibility == 'public' else 'false' }}
+
+{% raw %}
+  platform-docs:
+    name: platform-docs
+    needs: changes
+    if: ${{ needs.changes.outputs.docs == 'true' }}
+    permissions:
+      contents: read
+    uses: {% endraw %}{{ owner }}{% raw %}/dev-platform/.github/workflows/docs.yml@{% endraw %}{{ platform_ref }}{% raw %}
+    with:
+      files-json: ${{ needs.changes.outputs.docs_files }}
+      platform-ref: {% endraw %}{{ platform_ref }}{% raw %}
+
+  quality-gate:
+    name: quality-gate
+    if: always()
+    needs: [changes, platform-verify, platform-security, platform-docs]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          CHANGES: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          DOCS: ${{ needs.changes.outputs.docs }}
+          VERIFY: ${{ needs.platform-verify.result }}
+          SECURITY: ${{ needs.platform-security.result }}
+          DOC_CHECK: ${{ needs.platform-docs.result }}
+        run: |
+          set -euo pipefail
+          test "$CHANGES" = success
+          if [[ "$CODE" = true || "$EVENT" = workflow_dispatch ]]; then
+            test "$VERIFY" = success && test "$SECURITY" = success
+          fi
+          if [[ "$DOCS" = true ]]; then
+            test "$DOC_CHECK" = success
+          fi{% endraw %}

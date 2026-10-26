@@ -244,8 +244,8 @@ def run_verify(
                 if measured.get("line") is None:
                     outcome = _record(
                         step,
-                        procs.STATUS_PASSED,
-                        0,
+                        procs.STATUS_ERROR,
+                        EXIT_EXECUTION,
                         time.monotonic() - step_started,
                         log,
                         "coverage report not produced",

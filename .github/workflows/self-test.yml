@@ -1,14 +1,8 @@
 name: Self-test
 
 on:
-  push:
-    paths-ignore:
-      - docs/**
-      - "**/*.md"
-  pull_request:
-    paths-ignore:
-      - docs/**
-      - "**/*.md"
+  push: {}
+  pull_request: {}
   workflow_dispatch: {}
   schedule:
     - cron: "0 4 * * 1"
@@ -21,7 +15,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.paths.outputs.code }}
+      docs: ${{ steps.paths.outputs.docs }}
+      docs_files: ${{ steps.paths.outputs.docs_files }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        id: paths
+        with:
+          base: ${{ github.event_name == 'push' && github.event.before || github.event.repository.default_branch }}
+          predicate-quantifier: some-with-excludes
+          list-files: json
+          filters: |
+            docs:
+              - '**/*.{md,mdx}'
+            code:
+              - '**'
+              - '!**/*.{md,mdx}'
+
   cli:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     name: cli
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -42,6 +65,8 @@ jobs:
         run: uv run --project cli pytest cli/tests -q
 
   template:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     name: template (${{ matrix.stack }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -107,6 +132,8 @@ jobs:
         run: mise run test
 
   devcontainer:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     name: devcontainer (${{ matrix.stack }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -150,6 +177,8 @@ jobs:
         run: npx --yes "$DEVCONTAINER_CLI" exec --workspace-folder "$SMOKE" bash -lc "mise run check"
 
   security:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     name: security
     permissions:
       contents: read
@@ -161,6 +190,8 @@ jobs:
       upload-sarif: true
 
   workflow-lint:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     name: workflow-lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -196,3 +227,44 @@ jobs:
           status: self-test job failed
           title: "CI failure: ${{ github.workflow }}"
           label: ci-alert
+
+  docs:
+    name: docs
+    needs: changes
+    if: ${{ needs.changes.outputs.docs == 'true' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/docs.yml
+    with:
+      files-json: ${{ needs.changes.outputs.docs_files }}
+      platform-ref: ${{ github.sha }}
+
+  quality-gate:
+    name: quality-gate
+    if: always()
+    needs: [changes, cli, template, devcontainer, security, workflow-lint, docs]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce required checks
+        env:
+          EVENT: ${{ github.event_name }}
+          CHANGE_STATUS: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
+          DOCS: ${{ needs.changes.outputs.docs }}
+          CLI: ${{ needs.cli.result }}
+          TEMPLATE: ${{ needs.template.result }}
+          DEVCONTAINER: ${{ needs.devcontainer.result }}
+          SECURITY: ${{ needs.security.result }}
+          WORKFLOW_LINT: ${{ needs.workflow-lint.result }}
+          DOC_CHECK: ${{ needs.docs.result }}
+        run: |
+          set -euo pipefail
+          test "$CHANGE_STATUS" = success
+          if [[ "$CODE" = true || "$EVENT" = schedule || "$EVENT" = workflow_dispatch ]]; then
+            for status in "$CLI" "$TEMPLATE" "$DEVCONTAINER" "$SECURITY" "$WORKFLOW_LINT"; do
+              test "$status" = success
+            done
+          fi
+          if [[ "$DOCS" = true ]]; then
+            test "$DOC_CHECK" = success
+          fi

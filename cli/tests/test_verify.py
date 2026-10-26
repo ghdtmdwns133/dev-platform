@@ -261,3 +261,28 @@ def test_summary_markdown_contains_table(tmp_path: Path, monkeypatch) -> None:
     markdown = (reports / "unity/summary.md").read_text(encoding="utf-8")
     assert "| step | status | exit | duration | detail |" in markdown
     assert "Tests: 6 passed" in markdown
+
+
+def test_missing_coverage_report_is_error(tmp_path: Path, monkeypatch) -> None:
+    root = make_unity_tree(tmp_path / "project")
+    config = config_for(root, coverage={"minimum": 27, "enabled": True})
+    reports = root / "artifacts/reports"
+    mock_editor(monkeypatch)
+    monkeypatch.setattr(
+        unity,
+        "run_tests",
+        lambda *args, **kwargs: unity.UnityStep(
+            "unity-test",
+            procs.STATUS_PASSED,
+            0,
+            None,
+            "1 passed",
+            {"passed": 1, "failed": 0, "skipped": 0},
+        ),
+    )
+    assert verify.run_verify("unity", root, reports, config, 27) == 3
+    summary = json.loads((reports / "unity/summary.json").read_text(encoding="utf-8"))
+    coverage = next(step for step in summary["steps"] if step["name"] == "unity-coverage")
+    assert coverage["status"] == "error"
+    assert coverage["exit"] == 3
+    assert summary["coverage"]["line"] is None
