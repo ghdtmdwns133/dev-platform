@@ -24,18 +24,7 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-{% if stack == 'unity' %}
-          { "context": "platform-verify / integrity" },
-{% if unity_runner == 'self-hosted' and visibility == 'private' %}
-          { "context": "platform-verify / tests" },
-{% endif %}
-{% else %}
-          { "context": "platform-verify / check" },
-{% if stack != 'other' or run_tests %}
-          { "context": "platform-verify / test" },
-{% endif %}
-{% endif %}
-          { "context": "platform-security / scan" }
+          { "context": "quality-gate" }
         ]
       }
     }

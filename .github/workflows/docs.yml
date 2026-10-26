@@ -1,0 +1,85 @@
+name: Docs
+
+on:
+  workflow_call:
+    inputs:
+      files-json:
+        description: JSON array of changed Markdown paths.
+        required: true
+        type: string
+      platform-ref:
+        description: dev-platform ref containing the shared lint policy.
+        required: false
+        default: v1
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out project
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check out shared policy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ghdtmdwns133/dev-platform
+          ref: ${{ inputs.platform-ref }}
+          path: .dev-platform
+          persist-credentials: false
+      - name: Prepare safe changed-file arguments
+        id: files
+        shell: bash
+        env:
+          FILES_JSON: ${{ inputs.files-json }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import shlex
+          import uuid
+
+          raw = json.loads(os.environ["FILES_JSON"])
+          if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+              raise ValueError("files-json must be an array of paths")
+          root = pathlib.Path.cwd().resolve()
+          files = []
+          for name in raw:
+              path = pathlib.PurePosixPath(name)
+              if (
+                  path.is_absolute() or ".." in path.parts
+                  or path.suffix.lower() not in (".md", ".mdx")
+                  or any(char in name for char in "\r\n\0*?[]{}!")
+              ):
+                  raise ValueError(f"unsafe or non-Markdown path: {name!r}")
+              target = root.joinpath(*path.parts)
+              if target.is_file() and target.resolve().is_relative_to(root):
+                  files.append(name)
+          boundary = "DOCS_" + uuid.uuid4().hex
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"count={len(files)}\n")
+              output.write(f"globs<<{boundary}\n" + "\n".join(files) + f"\n{boundary}\n")
+              output.write("args=--offline --root-dir . --no-progress " +
+                           " ".join(shlex.quote(name) for name in files) + "\n")
+          PY
+      - name: Lint Markdown structure
+        if: steps.files.outputs.count != '0'
+        uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25
+        with:
+          config: .dev-platform/docs-markdownlint.json
+          globs: ${{ steps.files.outputs.globs }}
+      - name: Check local links, anchors and images
+        if: steps.files.outputs.count != '0'
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2
+        with:
+          args: ${{ steps.files.outputs.args }}
+          failIfEmpty: false

@@ -687,3 +687,29 @@ def test_collect_coverage_missing_warns(tmp_path: Path, capsys) -> None:
     measured = unity.collect_coverage(tmp_path / "reports")
     assert measured["line"] is None
     assert "code coverage report not produced" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-1", "101"])
+def test_invalid_coverage_value_rejected(tmp_path: Path, value: str) -> None:
+    path = tmp_path / "Summary.xml"
+    path.write_text(
+        f"<CoverageReport><Summary><Linecoverage>{value}</Linecoverage></Summary></CoverageReport>",
+        encoding="utf-8",
+    )
+    with pytest.raises(DevctlError) as excinfo:
+        unity.parse_summary_xml(path)
+    assert excinfo.value.code == 3
+
+
+def test_no_tests_executed_is_error(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    config = config_for(root, retryFailed=0)
+    reports = tmp_path / "reports"
+    write_text(
+        reports / "unity/editmode.xml",
+        '<test-run result="Passed" passed="0" failed="0" skipped="0" total="0" />',
+    )
+    step = unity.run_tests(root, reports, config, "EditMode", Path("Unity.exe"), FakeRunner())
+    assert step.status == "error"
+    assert step.exit == 3

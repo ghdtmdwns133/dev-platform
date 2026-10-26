@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -362,8 +363,14 @@ def parse_summary_xml(path: Path) -> dict[str, Any]:
     line = number("linecoverage", "totalpercentage")
     if line is None and coverable:
         line = (covered or 0.0) / coverable * 100.0
-    if line is None:
-        raise DevctlError(EXIT_EXECUTION, f"no line coverage value in {path}")
+    if line is None or not math.isfinite(line) or not 0 <= line <= 100:
+        raise DevctlError(EXIT_EXECUTION, f"invalid line coverage value in {path}: {line}")
+    if (
+        (covered is not None and (not math.isfinite(covered) or covered < 0))
+        or (coverable is not None and (not math.isfinite(coverable) or coverable < 0))
+        or (covered is not None and coverable is not None and covered > coverable)
+    ):
+        raise DevctlError(EXIT_EXECUTION, f"invalid coverage line counts in {path}")
     return {
         "line": round(line, 2),
         "covered": int(covered) if covered is not None else None,
@@ -407,6 +414,14 @@ def run_tests(
         counts = parse_nunit(result_file)
     except DevctlError as exc:
         return UnityStep(name, procs.STATUS_ERROR, EXIT_EXECUTION, result.log, exc.message)
+    if counts["total"] < 1 or sum(counts[key] for key in ("passed", "failed", "skipped")) < 1:
+        return UnityStep(
+            name,
+            procs.STATUS_ERROR,
+            EXIT_EXECUTION,
+            result.log,
+            "Unity returned a result with no executed or enumerated tests",
+        )
 
     failed_names = failed_test_names(result_file)
     first_run_failed = counts["failed"] > 0 or counts["result"] != "Passed" or bool(failed_names)

@@ -53,17 +53,10 @@ CI uses Unity Build Automation for a cloud build (`unity-runner: uba`); integrit
 
 `.github/workflows/ci.yml` calls the shared platform workflows at `{{ platform_ref }}`. It also runs on pull requests, so the required checks are the same for humans and automation.
 
-{% if stack == 'unity' and unity_runner == 'none' %}
-Required checks are `platform-verify / integrity` and `platform-security / scan`. No Unity test or build check is required because no Unity runner is configured.
-{% elif stack == 'unity' and unity_runner == 'self-hosted' %}
-Required checks are `platform-verify / integrity`, `platform-verify / tests` and `platform-security / scan`. Unity tests run only on a runner labeled `[self-hosted, windows, unity]`.
-{% elif stack == 'unity' %}
-Required checks are `platform-verify / integrity` and `platform-security / scan`. The `platform-verify / cloud-build` check appears only when Unity files change and is not a required check.
-{% elif stack == 'other' %}
-Required checks are `platform-verify / check`{% if run_tests %}, `platform-verify / test`{% endif %} and `platform-security / scan`.
-{% else %}
-Required checks are `platform-verify / check`, `platform-verify / test` and `platform-security / scan`.
-{% endif %}
+The required `quality-gate` status checks the code pipeline when code changes and the
+shared Markdown and local-link pipeline when documentation changes. Mixed changes
+run both. The Unity test and build jobs still require the configured Unity
+runner; a repository using `unity-runner: none` runs integrity checks only.
 
 ## Dependency updates
 
