@@ -3,6 +3,9 @@ repos:
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
+{% if stack == 'unity' %}
+        exclude: '^\.devplatform/external-guids\.json$'
+{% endif %}
       - id: check-illegal-windows-names
       - id: check-json
       - id: check-merge-conflict
@@ -13,6 +16,7 @@ repos:
         exclude: '\.(unity|prefab|asset|mat|controller|overrideController|inputactions|playable|anim|meta)$'
 {% endif %}
       - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
 {% if stack == 'unity' %}
         exclude: '\.(unity|prefab|asset|mat|controller|overrideController|inputactions|playable|anim|meta)$'
 {% endif %}

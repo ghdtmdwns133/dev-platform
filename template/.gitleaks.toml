@@ -1,0 +1,10 @@
+# Generated from the dev-platform Copier template (Unity stack).
+# .devplatform/external-guids.json is a list of Unity asset GUIDs (32 hex
+# characters) produced by `devctl unity integrity --write-baseline`; gitleaks'
+# generic API-key rule mistakes them for secrets.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Unity external GUID baseline"
+paths = ['''^\.devplatform/external-guids\.json$''']
