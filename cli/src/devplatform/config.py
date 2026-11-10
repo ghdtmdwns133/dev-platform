@@ -145,6 +145,17 @@ def _validate_cloud_build(value: Any) -> dict[str, Any]:
     return {"target": target, "timeoutMinutes": timeout}
 
 
+def _validate_optional_paths(unity: dict[str, Any]) -> None:
+    """Validate the nullable keys; ``None`` disables the matching check."""
+    for key in ("editorPath", "scene", "sceneGuid", "mainScene"):
+        if unity[key] is not None:
+            unity[key] = _expect_str(unity[key], f"unity.{key}")
+    if (unity["scene"] is None) != (unity["sceneGuid"] is None):
+        raise _error("unity.scene and unity.sceneGuid must be set together (or both null)")
+    if unity["requiredObjects"] and unity["scene"] is None:
+        raise _error("unity.requiredObjects needs unity.scene")
+
+
 def _validate_unity(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise _error("unity must be an object")
@@ -162,13 +173,7 @@ def _validate_unity(value: Any) -> dict[str, Any]:
         "buildOutput",
     ):
         unity[key] = _expect_str(unity[key], f"unity.{key}")
-    for key in ("editorPath", "scene", "sceneGuid", "mainScene"):
-        if unity[key] is not None:
-            unity[key] = _expect_str(unity[key], f"unity.{key}")
-    if (unity["scene"] is None) != (unity["sceneGuid"] is None):
-        raise _error("unity.scene and unity.sceneGuid must be set together (or both null)")
-    if unity["requiredObjects"] and unity["scene"] is None:
-        raise _error("unity.requiredObjects needs unity.scene")
+    _validate_optional_paths(unity)
     unity["requiredObjects"] = _validate_required_objects(unity["requiredObjects"])
     unity["allowedScriptRoots"] = _expect_str_list(
         unity["allowedScriptRoots"], "unity.allowedScriptRoots"

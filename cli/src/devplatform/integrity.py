@@ -133,17 +133,21 @@ def _check_required_objects(scene: str, config: Config, errors: list[str]) -> No
                 errors.append(f"Original {name} lost its component (class {class_id})")
 
 
+def _check_main_scene(text: str, main_scene: str | None, errors: list[str]) -> None:
+    if main_scene is None:
+        return
+    entries = re.findall(r"(?m)^\s*-\s+enabled:\s*(0|1)\s*\n\s*path:\s*(Assets/[^\r\n]+)", text)
+    enabled_scenes = [path.strip() for enabled, path in entries if enabled == "1"]
+    if not enabled_scenes or enabled_scenes[0] != main_scene:
+        errors.append(f"{main_scene} must remain the first enabled (main) build scene")
+
+
 def _check_build_settings(root: Path, config: Config, errors: list[str]) -> None:
     settings = root / "ProjectSettings/EditorBuildSettings.asset"
     if not settings.is_file():
         return
     text = _read(settings)
-    main_scene = config.unity["mainScene"]
-    if main_scene is not None:
-        entries = re.findall(r"(?m)^\s*-\s+enabled:\s*(0|1)\s*\n\s*path:\s*(Assets/[^\r\n]+)", text)
-        enabled_scenes = [path.strip() for enabled, path in entries if enabled == "1"]
-        if not enabled_scenes or enabled_scenes[0] != main_scene:
-            errors.append(f"{main_scene} must remain the first enabled (main) build scene")
+    _check_main_scene(text, config.unity["mainScene"], errors)
 
     for scene in re.findall(r"(?m)^\s*path:\s*(Assets/[^\r\n]+)", text):
         if not (root / scene).is_file():
