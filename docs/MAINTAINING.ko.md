@@ -226,7 +226,7 @@ self-hosted 작업의 checkout은 `clean: false`라서 work folder의 `Library/`
 uv run --project C:/dev/dev-platform/cli devctl unity integrity --write-baseline
 ```
 
-**무결성 규칙.** 검사 순서와 문구는 `cli/src/devplatform/integrity.py`에 있다. 경로 목록은 `REQUIRED_PATHS`, 참조 확장자는 `REFERENCE_SUFFIXES`, 씬·오브젝트 검사는 `_check_scene()`·`_check_required_objects()`, 스크립트 위치는 `_check_scripts()`, 메타/GUID는 `_check_metas()`, 참조는 `_check_references()`다. `::error::` 문구는 CI와 테스트가 소비하므로 바꾸면 `cli/tests/test_integrity.py`를 같이 고친다. 규칙을 저장소별로 바꾸려면 config 키(`requiredObjects`, `allowedScriptRoots`, `templateScripts`, `testPlatforms`)를 우선 사용한다. 과제 보호를 위해 `Assets/MyScripts/`, `Assets/OtherScripts/` 밖의 새 스크립트와 템플릿 스크립트 삭제는 실패로 둔다.
+**무결성 규칙.** 검사 순서와 문구는 `cli/src/devplatform/integrity.py`에 있다. 경로 목록은 `REQUIRED_PATHS`, 참조 확장자는 `REFERENCE_SUFFIXES`, 씬·오브젝트 검사는 `_check_scene()`·`_check_required_objects()`, 스크립트 위치는 `_check_scripts()`, 메타/GUID는 `_check_metas()`, 참조는 `_check_references()`다. `::error::` 문구는 CI와 테스트가 소비하므로 바꾸면 `cli/tests/test_integrity.py`를 같이 고친다. 보호 씬(`scene`/`sceneGuid`), 메인 빌드 씬(`mainScene`), 필수 오브젝트(`requiredObjects`), 스크립트 위치(`allowedScriptRoots`/`templateScripts`)는 저장소가 config에서 켤 때만 검사한다. 기본값(`null`/`[]`)은 꺼짐이고 새 Unity 렌더도 꺼진 상태로 시작한다. 과제처럼 보호가 필요한 저장소(`project-delta`)는 이 키들을 명시적으로 둔다.
 
 **UBA.** 대시보드에서 GitHub 저장소를 연결하고 Windows build target을 만든 뒤 org id, project id, target id, API key를 시크릿 `UNITY_BUILD_API_KEY`, `UNITY_BUILD_ORG_ID`, `UNITY_BUILD_PROJECT_ID`로 넣는다. `unity.cloudBuild.target`과 `unity.cloudBuild.timeoutMinutes`(기본 90)로 기본값을 정한다. 무료 한도는 Windows 200분/월이고, 소진되면 결제 수단이 없는 한 빌드가 멈춘다. [UNITY-CI.md](UNITY-CI.md).
 

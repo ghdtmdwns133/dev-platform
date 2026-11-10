@@ -124,7 +124,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f .devplatform/config.json
-          test -f Assets/MyScripts/Editor/DevPlatform/OdinValidatorEntryPoint.cs
+          test -f Assets/DevPlatform/Editor/OdinValidatorEntryPoint.cs
           test -f .github/workflows/ci.yml
           uv run --project "$PLATFORM_CLI" devctl unity integrity --help >/dev/null
           uv run --project "$PLATFORM_CLI" devctl verify --help >/dev/null

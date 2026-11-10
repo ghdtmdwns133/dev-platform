@@ -5,9 +5,9 @@ Design notes
 * EditMode always runs with ``-batchmode -nographics``.  PlayMode defaults to
   ``unity.playmodeMode = "gui"``: no ``-batchmode`` and no ``-nographics`` (Unity
   opens its window, runs the tests and exits on its own).  ``"batch"`` adds
-  ``-batchmode`` without ``-nographics``.  GUI mode is required for project-delta
-  because InputSystem drops input while ``!Application.isFocused`` and the test
-  framework rejects ``WaitForEndOfFrame`` in batchmode.
+  ``-batchmode`` without ``-nographics``.  GUI mode is needed when PlayMode
+  tests use InputSystem, which drops input while ``!Application.isFocused``, or
+  ``WaitForEndOfFrame``, which the test framework rejects in batchmode.
 * Test runs never pass ``-quit``: Unity documents that ``-quit`` is unsupported
   while ``-runTests`` is active.
 * ``unity.retryFailed`` (default 1) reruns only the failed test full names once
@@ -20,7 +20,7 @@ Design notes
 * ``unity.coverageAssemblyFilters`` uses Unity's ``assemblyFilters`` syntax
   (``+Include`` / ``-Exclude``).  The default ``["-*Tests*"]`` excludes test
   assemblies; repositories can narrow it, e.g.
-  ``["+ProjectDelta.Runtime", "-ProjectDelta.Tests.*"]``.
+  ``["+MyGame.Runtime", "-MyGame.Tests.*"]``.
 * Build success requires the configured exe plus more than 1 MiB in the whole
   output directory (Unity 6 keeps the engine in ``UnityPlayer.dll``); the detail
   reports total bytes, exe bytes and the exe SHA-256.

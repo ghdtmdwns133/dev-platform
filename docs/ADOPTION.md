@@ -187,8 +187,11 @@ uv run --script scripts/bootstrap_repo.py \
 For Unity, use `--template unity`; inspect the project's actual
 `ProjectSettings/ProjectVersion.txt`, main scene and `.meta` GUID, scene YAML
 fileIds, required objects and first enabled build scene before trusting the
-rendered `.devplatform/config.json`. New Unity renders are EditMode-only and
-default to `unity-runner: none`; do not copy `project-delta` defaults. UBA also
+rendered `.devplatform/config.json`. The rendered config enables only the
+generic integrity checks; the protected scene, required objects, main build
+scene and allowed script roots start disabled (`null`/`[]`) and are opt-in.
+New Unity renders are EditMode-only and default to `unity-runner: none`; do not
+copy `project-delta` defaults. UBA also
 requires `unity.cloudBuild.target` to be set to the real build target id.
 
 `--adopt` legitimately writes `.copier-answers.yml` because Copier now owns the

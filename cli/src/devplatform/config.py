@@ -24,32 +24,23 @@ PROFILES = ("unity", "unity-assets")
 DEFAULT_UNITY: dict[str, Any] = {
     "version": "6000.5.1f1",
     "editorPath": None,
-    "scene": "Assets/Scenes/SampleScene.unity",
-    "sceneGuid": "99c9720ab356a0642a771bea13969a05",
-    "mainScene": "Assets/Scenes/SampleScene.unity",
-    "requiredObjects": [
-        {"fileId": "330585543", "name": "Main Camera", "componentClassId": 20},
-        {
-            "fileId": "832575517",
-            "name": "Global Volume",
-            "componentClassId": 114,
-            "requireGlobalVolume": True,
-        },
-    ],
-    "allowedScriptRoots": ["Assets/MyScripts/", "Assets/OtherScripts/"],
-    "templateScripts": [
-        "Assets/Settings/GlobalVolumeSettings.cs",
-        "Assets/TutorialInfo/Scripts/Readme.cs",
-        "Assets/TutorialInfo/Scripts/Editor/ReadmeEditor.cs",
-    ],
+    # Project-specific protection rules are opt-in.  ``None`` (or an empty list)
+    # disables the corresponding integrity check, so a new project is not bound to
+    # another project's scene, objects or folder layout.
+    "scene": None,
+    "sceneGuid": None,
+    "mainScene": None,
+    "requiredObjects": [],
+    "allowedScriptRoots": [],
+    "templateScripts": [],
     "externalGuidBaseline": ".devplatform/external-guids.json",
-    "testPlatforms": ["EditMode", "PlayMode"],
+    "testPlatforms": ["EditMode"],
     "buildTarget": "StandaloneWindows64",
-    "odinEntryPoint": "ProjectDelta.Editor.DevPlatform.OdinValidatorEntryPoint.Run",
+    "odinEntryPoint": "DevPlatform.Editor.OdinValidatorEntryPoint.Run",
     "playmodeMode": "gui",
     "retryFailed": 1,
     "coverageAssemblyFilters": ["-*Tests*"],
-    "buildOutput": "artifacts/unity-build/ProjectDelta.exe",
+    "buildOutput": "artifacts/unity-build/Player.exe",
     "cloudBuild": {"target": None, "timeoutMinutes": 90},
 }
 
@@ -165,17 +156,19 @@ def _validate_unity(value: Any) -> dict[str, Any]:
 
     for key in (
         "version",
-        "scene",
-        "sceneGuid",
-        "mainScene",
         "externalGuidBaseline",
         "buildTarget",
         "odinEntryPoint",
         "buildOutput",
     ):
         unity[key] = _expect_str(unity[key], f"unity.{key}")
-    if unity["editorPath"] is not None:
-        unity["editorPath"] = _expect_str(unity["editorPath"], "unity.editorPath")
+    for key in ("editorPath", "scene", "sceneGuid", "mainScene"):
+        if unity[key] is not None:
+            unity[key] = _expect_str(unity[key], f"unity.{key}")
+    if (unity["scene"] is None) != (unity["sceneGuid"] is None):
+        raise _error("unity.scene and unity.sceneGuid must be set together (or both null)")
+    if unity["requiredObjects"] and unity["scene"] is None:
+        raise _error("unity.requiredObjects needs unity.scene")
     unity["requiredObjects"] = _validate_required_objects(unity["requiredObjects"])
     unity["allowedScriptRoots"] = _expect_str_list(
         unity["allowedScriptRoots"], "unity.allowedScriptRoots"

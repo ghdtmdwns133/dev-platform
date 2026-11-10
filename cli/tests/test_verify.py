@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from support import (
+    PROTECTED_UNITY,
     FakeRunner,
     make_unity_tree,
     write_config,
@@ -18,10 +19,20 @@ from devplatform.config import load_config
 from devplatform.errors import DevctlError
 
 
-def config_for(root: Path, profile: str = "unity", coverage: dict | None = None):
+def config_for(
+    root: Path,
+    profile: str = "unity",
+    coverage: dict | None = None,
+    *,
+    protected: bool = False,
+):
+    unity_config: dict = {"testPlatforms": ["EditMode", "PlayMode"]}
+    if protected:
+        unity_config.update(PROTECTED_UNITY)
     write_config(
         root,
         profile=profile,
+        unity=unity_config,
         coverage=coverage or {"minimum": 0, "enabled": True},
     )
     return load_config(root, cli_profile=profile)
@@ -136,7 +147,7 @@ def test_fail_fast_skips_remaining(tmp_path: Path) -> None:
         scene.read_text(encoding="utf-8").replace("m_Name: Main Camera", "m_Name: Renamed"),
         encoding="utf-8",
     )
-    config = config_for(root)
+    config = config_for(root, protected=True)
     reports = root / "artifacts/reports"
     runner = FakeRunner()
     code = verify.run_verify("unity", root, reports, config, 0, fail_fast=True, runner=runner)
@@ -202,7 +213,7 @@ def test_unity_integrity_does_not_block_tests_but_editmode_blocks_coverage(
         scene.read_text(encoding="utf-8").replace("m_Name: Main Camera", "m_Name: Renamed"),
         encoding="utf-8",
     )
-    config = config_for(root)
+    config = config_for(root, protected=True)
     reports = root / "artifacts/reports"
     mock_editor(monkeypatch)
     calls: list[str] = []

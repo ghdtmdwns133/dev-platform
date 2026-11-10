@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using UnityEngine;
 
-namespace ProjectDelta.Editor.DevPlatform
+namespace DevPlatform.Editor
 {
     /// <summary>
     /// Serialized outcome of one Odin Validator probe, written for devctl to read.
