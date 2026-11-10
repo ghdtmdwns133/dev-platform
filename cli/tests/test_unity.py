@@ -272,10 +272,10 @@ def _nunit_xml(cases, passed: int, failed: int, skipped: int, result: str) -> st
 
 
 FLAKE_A = (
-    "ProjectDelta.Tests.PlayMode.MissionAcceptanceTests."
+    "Game.Tests.PlayMode.MissionAcceptanceTests."
     "ActiveInterceptBot_ReachesRealSuccess_WithinMissionBudget"
 )
-FLAKE_B = "ProjectDelta.Tests.PlayMode.ViewRigTests.FreeLook_FreezesTheAim_WhileDragging"
+FLAKE_B = "Game.Tests.PlayMode.ViewRigTests.FreeLook_FreezesTheAim_WhileDragging"
 
 
 def test_retry_marks_flaky_and_passes(tmp_path: Path, capsys) -> None:
@@ -406,7 +406,7 @@ def test_build_project_success(tmp_path: Path) -> None:
     root = tmp_path / "project"
     root.mkdir()
     config = config_for(root)
-    output = root / "artifacts/unity-build/ProjectDelta.exe"
+    output = root / "artifacts/unity-build/Player.exe"
     output.parent.mkdir(parents=True)
     payload = b"\0" * 667_648
     output.write_bytes(payload)
@@ -433,7 +433,7 @@ def test_build_project_missing_and_small(tmp_path: Path) -> None:
     assert step.status == "error"
     assert step.exit == 3
 
-    output = root / "artifacts/unity-build/ProjectDelta.exe"
+    output = root / "artifacts/unity-build/Player.exe"
     output.parent.mkdir(parents=True)
     output.write_bytes(b"\0")
     step = unity.build_project(root, tmp_path / "reports", config, Path("Unity.exe"), FakeRunner())
@@ -556,11 +556,11 @@ def _clear_github_env(monkeypatch) -> None:
 def _upload_tree(tmp_path: Path) -> Path:
     reports = tmp_path / "reports"
     write_text(
-        reports / "unity/coverage/project-delta-opencov/EditMode/TestCoverageResults_0000.xml",
+        reports / "unity/coverage/game-opencov/EditMode/TestCoverageResults_0000.xml",
         "<x />",
     )
     write_text(
-        reports / "unity/coverage/project-delta-opencov/PlayMode/TestCoverageResults_0000.xml",
+        reports / "unity/coverage/game-opencov/PlayMode/TestCoverageResults_0000.xml",
         "<x />",
     )
     return reports

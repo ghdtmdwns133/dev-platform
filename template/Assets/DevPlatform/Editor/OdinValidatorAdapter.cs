@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
-namespace ProjectDelta.Editor.DevPlatform
+namespace DevPlatform.Editor
 {
     /// <summary>
     /// Reflection-only bridge to the optional Odin Validator package.

@@ -235,14 +235,15 @@ jobs:
         shell: pwsh
         run: |
           $ref = $env:GITHUB_REF_NAME -replace '[^A-Za-z0-9._-]', '-'
+          $name = ($env:GITHUB_REPOSITORY -split '/')[-1]
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          Compress-Archive -Path artifacts/unity-build/* -DestinationPath "artifacts/ProjectDelta-$ref.zip" -Force
+          Compress-Archive -Path artifacts/unity-build/* -DestinationPath "artifacts/$name-$ref.zip" -Force
       - name: Upload build
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unity-build
-          path: ${{ inputs.project-path }}/artifacts/ProjectDelta-*.zip
+          path: ${{ inputs.project-path }}/artifacts/${{ github.event.repository.name }}-*.zip
           if-no-files-found: warn
           retention-days: 14
 

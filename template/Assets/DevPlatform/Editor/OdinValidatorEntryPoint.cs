@@ -3,12 +3,12 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 
-namespace ProjectDelta.Editor.DevPlatform
+namespace DevPlatform.Editor
 {
     /// <summary>
     /// Batchmode entry point for the optional Odin Validator bridge:
     ///   Unity.exe -batchmode -projectPath &lt;root&gt;
-    ///     -executeMethod ProjectDelta.Editor.DevPlatform.OdinValidatorEntryPoint.Run
+    ///     -executeMethod DevPlatform.Editor.OdinValidatorEntryPoint.Run
     ///     -odinReportPath artifacts/reports/unity/odin.json
     ///
     /// The method always writes a JSON report and exits: 0 when the validator passed or is not

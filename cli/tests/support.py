@@ -65,6 +65,24 @@ def write_meta(path: Path, guid: str | None = None) -> Path:
     return write_text(path.with_name(path.name + ".meta"), f"fileFormatVersion: 2\nguid: {guid}\n")
 
 
+#: The opt-in protection rules a course-style project configures explicitly.
+PROTECTED_UNITY: dict = {
+    "scene": SCENE_REL,
+    "sceneGuid": SCENE_GUID,
+    "mainScene": SCENE_REL,
+    "requiredObjects": [
+        {"fileId": "330585543", "name": "Main Camera", "componentClassId": 20},
+        {
+            "fileId": "832575517",
+            "name": "Global Volume",
+            "componentClassId": 114,
+            "requireGlobalVolume": True,
+        },
+    ],
+    "allowedScriptRoots": ["Assets/MyScripts/", "Assets/OtherScripts/"],
+}
+
+
 def make_unity_tree(
     root: Path,
     *,

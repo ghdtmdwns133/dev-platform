@@ -98,13 +98,41 @@ def test_required_objects_validation(tmp_path: Path) -> None:
         tmp_path,
         {
             "profile": "unity",
-            "unity": {"requiredObjects": [{"fileId": "1", "name": "Cam", "componentClassId": 20}]},
+            "unity": {
+                "scene": "Assets/Scenes/Main.unity",
+                "sceneGuid": "0" * 32,
+                "requiredObjects": [{"fileId": "1", "name": "Cam", "componentClassId": 20}],
+            },
         },
     )
     config = load_config(tmp_path)
     assert config.unity["requiredObjects"][0]["requireGlobalVolume"] is False
 
     _write(tmp_path, {"profile": "unity", "unity": {"requiredObjects": [{"fileId": "1"}]}})
+    with pytest.raises(DevctlError):
+        load_config(tmp_path)
+
+
+def test_protection_rules_default_off(tmp_path: Path) -> None:
+    _write(tmp_path, {"profile": "unity"})
+    config = load_config(tmp_path)
+    assert config.unity["scene"] is None
+    assert config.unity["sceneGuid"] is None
+    assert config.unity["mainScene"] is None
+    assert config.unity["requiredObjects"] == []
+    assert config.unity["allowedScriptRoots"] == []
+    assert config.unity["testPlatforms"] == ["EditMode"]
+
+
+def test_scene_and_guid_set_together(tmp_path: Path) -> None:
+    _write(tmp_path, {"profile": "unity", "unity": {"scene": "Assets/Scenes/Main.unity"}})
+    with pytest.raises(DevctlError):
+        load_config(tmp_path)
+
+
+def test_required_objects_need_scene(tmp_path: Path) -> None:
+    objects = [{"fileId": "1", "name": "Cam", "componentClassId": 20}]
+    _write(tmp_path, {"profile": "unity", "unity": {"requiredObjects": objects}})
     with pytest.raises(DevctlError):
         load_config(tmp_path)
 

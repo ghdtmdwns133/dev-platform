@@ -443,7 +443,7 @@ jobs:
             exit 1
           fi
           mkdir -p artifacts
-          zip -j "artifacts/ProjectDelta-${ref}.zip" "${files[@]}"
+          zip -j "artifacts/${GITHUB_REPOSITORY#*/}-${ref}.zip" "${files[@]}"
       - name: Upload release artifacts
         if: ${{ inputs.artifact-path != '' && inputs.artifact-name != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

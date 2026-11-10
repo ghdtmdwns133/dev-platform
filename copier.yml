@@ -123,6 +123,7 @@ _exclude:
     {% if stack != 'unity' %}
     /Assets
     /.devplatform
+    /.gitleaks.toml
     /docs
     {% endif %}
   - |

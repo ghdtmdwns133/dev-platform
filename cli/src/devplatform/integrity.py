@@ -1,18 +1,20 @@
 """Unity repository integrity checks.
 
-This module is the single implementation of the invariants that used to live as an
-inline Python heredoc in ``project-delta/.github/workflows/ci.yml``.  The existing
-wording is preserved verbatim for every overlapping check because it is the parity
-baseline (see ``docs/ADOPTION.md`` and the platform plan, Approach 4).
+The generic checks always run.  The project-specific protection rules (a protected
+scene, required GameObjects, the main build scene and allowed script roots) run only
+when ``.devplatform/config.json`` configures them, so a repository opts in to the
+rules it actually wants.
 
 Checks run in a fixed order:
 
 1. required Unity project paths
 2. ``ProjectSettings/ProjectVersion.txt`` matches ``unity.version``
-3. the retained course scene and its original GUID
-4. the required template GameObjects and their components
-5. ``EditorBuildSettings.asset`` main scene and referenced scene paths
-6. C# script locations
+3. the protected scene and its GUID (when ``unity.scene`` is set)
+4. the required GameObjects and their components (when ``unity.requiredObjects``
+   is non-empty)
+5. ``EditorBuildSettings.asset`` referenced scene paths, plus the main scene when
+   ``unity.mainScene`` is set
+6. C# script locations (when ``unity.allowedScriptRoots`` is non-empty)
 7. valid JSON in ``Packages`` manifests
 8. ``.meta`` presence, GUID validity and duplicate GUIDs
 9. unresolved ``guid:`` references against Assets + the external baseline
@@ -88,16 +90,18 @@ def _check_version(root: Path, config: Config, errors: list[str]) -> None:
 
 def _check_scene(root: Path, config: Config, errors: list[str]) -> str | None:
     scene_rel = config.unity["scene"]
+    if scene_rel is None:
+        return None
     scene_file = root / scene_rel
     scene_meta_file = root / (scene_rel + ".meta")
     if not scene_file.is_file() or not scene_meta_file.is_file():
-        errors.append("Course template SampleScene and its .meta file must be retained")
+        errors.append(f"Protected scene and its .meta file must be retained: {scene_rel}")
         return None
 
     meta = _read(scene_meta_file)
     expected_guid = config.unity["sceneGuid"]
     if not re.search(rf"(?m)^guid:\s*{re.escape(expected_guid)}\s*$", meta):
-        errors.append("Original course template SampleScene GUID changed")
+        errors.append(f"Protected scene GUID changed: {scene_rel}")
     return _read(scene_file)
 
 
@@ -129,16 +133,21 @@ def _check_required_objects(scene: str, config: Config, errors: list[str]) -> No
                 errors.append(f"Original {name} lost its component (class {class_id})")
 
 
+def _check_main_scene(text: str, main_scene: str | None, errors: list[str]) -> None:
+    if main_scene is None:
+        return
+    entries = re.findall(r"(?m)^\s*-\s+enabled:\s*(0|1)\s*\n\s*path:\s*(Assets/[^\r\n]+)", text)
+    enabled_scenes = [path.strip() for enabled, path in entries if enabled == "1"]
+    if not enabled_scenes or enabled_scenes[0] != main_scene:
+        errors.append(f"{main_scene} must remain the first enabled (main) build scene")
+
+
 def _check_build_settings(root: Path, config: Config, errors: list[str]) -> None:
     settings = root / "ProjectSettings/EditorBuildSettings.asset"
     if not settings.is_file():
         return
     text = _read(settings)
-    main_scene = config.unity["mainScene"]
-    entries = re.findall(r"(?m)^\s*-\s+enabled:\s*(0|1)\s*\n\s*path:\s*(Assets/[^\r\n]+)", text)
-    enabled_scenes = [path.strip() for enabled, path in entries if enabled == "1"]
-    if not enabled_scenes or enabled_scenes[0] != main_scene:
-        errors.append("SampleScene must remain the first enabled (main) build scene")
+    _check_main_scene(text, config.unity["mainScene"], errors)
 
     for scene in re.findall(r"(?m)^\s*path:\s*(Assets/[^\r\n]+)", text):
         if not (root / scene).is_file():
@@ -149,13 +158,17 @@ def _check_scripts(root: Path, config: Config, errors: list[str]) -> None:
     asset_dir = root / "Assets"
     if not asset_dir.is_dir():
         return
-    template_scripts = set(config.unity["templateScripts"])
     allowed_roots = tuple(config.unity["allowedScriptRoots"])
+    if not allowed_roots:
+        return
+    template_scripts = set(config.unity["templateScripts"])
     for source in sorted(asset_dir.rglob("*.cs")):
         relative = _rel(root, source)
         if relative in template_scripts or relative.startswith(allowed_roots):
             continue
-        errors.append(f"New C# scripts must be in MyScripts or OtherScripts: {relative}")
+        errors.append(
+            f"C# script outside unity.allowedScriptRoots {list(allowed_roots)}: {relative}"
+        )
 
 
 def _check_json(root: Path, errors: list[str]) -> None:

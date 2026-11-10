@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from support import (
     BUILD_SETTINGS_DEFAULT,
+    PROTECTED_UNITY,
     SCENE_DEFAULT,
     SCENE_REL,
     make_unity_tree,
@@ -26,6 +27,12 @@ PACKAGE_GUID = "fedcba9876543210fedcba9876543210"
 
 def run(root: Path):
     return integrity.check(root, load_config(root))
+
+
+def protected(root: Path) -> Path:
+    """Opt the tree in to the scene, object, build-scene and script-root rules."""
+    write_config(root, unity=PROTECTED_UNITY)
+    return root
 
 
 def test_valid_tree(unity_tree: Path) -> None:
@@ -56,17 +63,17 @@ def test_version_exact(tmp_path: Path) -> None:
 
 
 def test_missing_scene_and_meta(tmp_path: Path) -> None:
-    root = make_unity_tree(tmp_path / "unity")
+    root = protected(make_unity_tree(tmp_path / "unity"))
     (root / SCENE_REL).unlink()
     result = run(root)
-    assert "Course template SampleScene and its .meta file must be retained" in result.errors
+    assert f"Protected scene and its .meta file must be retained: {SCENE_REL}" in result.errors
 
 
 def test_scene_guid_changed(tmp_path: Path) -> None:
-    root = make_unity_tree(tmp_path / "unity")
+    root = protected(make_unity_tree(tmp_path / "unity"))
     write_text(root / (SCENE_REL + ".meta"), "fileFormatVersion: 2\nguid: " + "1" * 32 + "\n")
     result = run(root)
-    assert "Original course template SampleScene GUID changed" in result.errors
+    assert f"Protected scene GUID changed: {SCENE_REL}" in result.errors
 
 
 def test_missing_meta_file(tmp_path: Path) -> None:
@@ -91,7 +98,7 @@ def test_duplicate_guid(tmp_path: Path) -> None:
 
 
 def test_missing_camera_object(tmp_path: Path) -> None:
-    root = make_unity_tree(tmp_path / "unity")
+    root = protected(make_unity_tree(tmp_path / "unity"))
     scene = (root / SCENE_REL).read_text(encoding="utf-8")
     scene = re.sub(r"(?ms)^--- !u!1 &330585543\s*\nGameObject:\s*\n.*?(?=^--- !u!)", "", scene)
     write_text(root / SCENE_REL, scene)
@@ -100,7 +107,7 @@ def test_missing_camera_object(tmp_path: Path) -> None:
 
 
 def test_camera_component_lost(tmp_path: Path) -> None:
-    root = make_unity_tree(tmp_path / "unity")
+    root = protected(make_unity_tree(tmp_path / "unity"))
     scene = (root / SCENE_REL).read_text(encoding="utf-8")
     scene = scene.replace("m_GameObject: {fileID: 330585543}", "m_GameObject: {fileID: 1}", 1)
     write_text(root / SCENE_REL, scene)
@@ -109,7 +116,7 @@ def test_camera_component_lost(tmp_path: Path) -> None:
 
 
 def test_global_volume_component_lost(tmp_path: Path) -> None:
-    root = make_unity_tree(tmp_path / "unity")
+    root = protected(make_unity_tree(tmp_path / "unity"))
     scene = (root / SCENE_REL).read_text(encoding="utf-8").replace("m_IsGlobal: 1", "m_IsGlobal: 0")
     write_text(root / SCENE_REL, scene)
     result = run(root)
@@ -117,7 +124,7 @@ def test_global_volume_component_lost(tmp_path: Path) -> None:
 
 
 def test_main_scene_must_be_first(tmp_path: Path) -> None:
-    root = make_unity_tree(tmp_path / "unity")
+    root = protected(make_unity_tree(tmp_path / "unity"))
     settings = """%YAML 1.1
 --- !u!1045 &1
 EditorBuildSettings:
@@ -129,7 +136,7 @@ EditorBuildSettings:
 """
     write_text(root / "ProjectSettings/EditorBuildSettings.asset", settings)
     result = run(root)
-    assert "SampleScene must remain the first enabled (main) build scene" in result.errors
+    assert f"{SCENE_REL} must remain the first enabled (main) build scene" in result.errors
 
 
 def test_missing_build_scene(tmp_path: Path) -> None:
@@ -144,11 +151,29 @@ def test_missing_build_scene(tmp_path: Path) -> None:
 
 
 def test_script_outside_allowed_roots(tmp_path: Path) -> None:
-    root = make_unity_tree(tmp_path / "unity")
+    root = protected(make_unity_tree(tmp_path / "unity"))
     write_text(root / "Assets/Rogue.cs", "public class Rogue {}\n")
     write_text(root / "Assets/Rogue.cs.meta", f"fileFormatVersion: 2\nguid: {'c' * 32}\n")
     result = run(root)
-    assert "New C# scripts must be in MyScripts or OtherScripts: Assets/Rogue.cs" in result.errors
+    assert any(
+        item.startswith("C# script outside unity.allowedScriptRoots")
+        and item.endswith(": Assets/Rogue.cs")
+        for item in result.errors
+    )
+
+
+def test_protection_rules_are_opt_in(tmp_path: Path) -> None:
+    root = make_unity_tree(tmp_path / "unity")
+    (root / SCENE_REL).unlink()
+    (root / (SCENE_REL + ".meta")).unlink()
+    write_text(root / "Assets/Rogue.cs", "public class Rogue {}\n")
+    write_text(root / "Assets/Rogue.cs.meta", f"fileFormatVersion: 2\nguid: {'c' * 32}\n")
+    settings = BUILD_SETTINGS_DEFAULT.replace(
+        f"  - enabled: 1\n    path: {SCENE_REL}\n    guid: 99c9720ab356a0642a771bea13969a05\n", ""
+    )
+    write_text(root / "ProjectSettings/EditorBuildSettings.asset", settings)
+    result = run(root)
+    assert result.errors == []
 
 
 def test_invalid_json(tmp_path: Path) -> None:
